@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Caixa Salva">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Caixa Salva</title>
+<style>
+:root{
+  --bg:#ffffff;--surface:#ffffff;--ink:#1c1c1a;--muted:#6b6b66;--line:#e7e7e2;
+  --accent:#fbe58a;--accent-edge:#ecd466;--accent-ink:#1c1c1a;--accent-soft:#fff9e3;--accent-text:#6e5800;--fab-bg:#fdecaf;--fab-edge:#f1e2a6;
+  --danger:#b3261e;--danger-soft:#fbe7e5;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#141414;--surface:#1f1f1e;--ink:#f3f3f0;--muted:#a3a39c;--line:#2f2f2c;
+    --accent:#f3dc7a;--accent-edge:#f3dc7a;--accent-ink:#1c1c1a;--accent-soft:#2b2711;--accent-text:#f0da86;--fab-bg:#e9db93;--fab-edge:#e9db93;
+    --danger:#ff8f86;--danger-soft:#3a1b19;color-scheme:dark}
+}
+:root[data-theme="dark"]{--bg:#141414;--surface:#1f1f1e;--ink:#f3f3f0;--muted:#a3a39c;--line:#2f2f2c;
+  --accent:#f3dc7a;--accent-edge:#f3dc7a;--accent-ink:#1c1c1a;--accent-soft:#2b2711;--accent-text:#f0da86;--fab-bg:#e9db93;--fab-edge:#e9db93;
+  --danger:#ff8f86;--danger-soft:#3a1b19;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+body.locked{overflow:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+button{font:inherit;color:inherit;cursor:pointer}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;background:var(--bg)}
+h1{font-size:26px;margin:0;letter-spacing:-.02em}
+.top-btn{border:0;background:transparent;color:var(--accent-text);font-weight:600;padding:10px 4px;min-height:44px}
+main{padding:0 16px 130px;max-width:720px;margin:0 auto}
+.seg{display:flex;background:var(--line);border-radius:12px;padding:3px;gap:3px;margin:4px 0 14px}
+.seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:600;padding:9px 8px;border-radius:9px;min-height:40px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden}
+.card.pad{padding:14px}
+.card h3{margin:0 0 8px;font-size:15px}
+.card h3::first-letter{text-transform:uppercase}
+.alert{border-color:transparent;background:var(--danger-soft);padding:12px 12px 6px}
+.alert-title{font-weight:700;color:var(--danger);margin:0 4px 6px}
+.soft{border-color:transparent;background:var(--accent-soft);padding:12px 14px}
+.soft p{margin:0 0 10px;font-size:14px}
+.row-btn{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:0;border-radius:10px;background:var(--surface);padding:11px 12px;margin:0 0 6px;text-align:left;min-height:46px}
+.row-btn small{display:block;color:var(--muted);font-size:12px;font-weight:500}
+.row-btn b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.row-btn:active{background:var(--accent-soft)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-size:12px;color:var(--muted);font-weight:600;text-align:right;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:13px 8px;border-bottom:1px solid var(--line);text-align:right;font-size:15px;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;padding-left:14px}
+th:last-child,td:last-child{padding-right:14px}
+td.name{width:100%;max-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+tbody tr{cursor:pointer}
+tbody tr:active{background:var(--accent-soft)}
+tfoot td{font-weight:700;border-bottom:0;background:var(--accent-soft);padding-top:14px;padding-bottom:14px;font-size:14px}
+td.late{color:var(--danger);font-weight:700}
+td.today{color:var(--danger);font-weight:700}
+.note{color:var(--muted);font-size:12px;margin:-4px 4px 12px}
+.muted{color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:44px 16px}
+.fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:10;border:1px solid var(--fab-edge);background:var(--fab-bg);color:var(--accent-ink);font-weight:600;padding:15px 26px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.09);min-height:52px;white-space:nowrap}
+.fab:active{filter:brightness(.92)}
+
+/* sheets */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:20;animation:fade .15s}
+.panel{background:var(--bg);width:100%;max-width:560px;max-height:92vh;max-height:92dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:20px 20px 0 0;padding:14px 16px calc(22px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sheet-head h2{margin:0;font-size:20px;letter-spacing:-.01em}
+.icon-btn{width:44px;height:44px;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;font-size:20px;color:var(--ink)}
+.icon-btn:active{background:var(--line)}
+label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 12px}
+input,select{display:block;width:100%;margin-top:5px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;min-height:46px;-webkit-appearance:none;appearance:none}
+input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.loan-box{background:var(--accent-soft);border-radius:14px;padding:14px 14px 2px;margin:6px 0 14px}
+.preview{font-size:14px;font-weight:600;color:var(--accent-text);margin:-2px 0 12px}
+.err{color:var(--danger);font-weight:600;font-size:14px;margin:0 0 10px;min-height:0}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600;padding:10px 14px;text-decoration:none;text-align:center}
+.btn.primary{background:var(--accent);border-color:var(--accent-edge);color:var(--accent-ink)}
+.btn.danger{color:var(--danger)}
+.btn.link{border:0;background:transparent;color:var(--muted);min-height:38px;font-weight:500;font-size:14px}
+.stack{display:grid;gap:10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:9px 16px;font-size:15px;margin:6px 0 18px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-weight:600;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-text);vertical-align:middle;margin-left:6px}
+.chip.late{background:var(--danger-soft);color:var(--danger)}
+.done{text-align:center;padding:6px 0 16px}
+.done .check{width:54px;height:54px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:28px;font-weight:700;margin:4px auto 10px}
+.done h2{margin:0 0 6px}
+.done p{margin:4px 0}
+.help{font-size:13px;color:var(--muted);margin:6px 0 14px}
+
+/* confirmation dialog (replaces native confirm/alert) */
+.dlg-back{position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;padding:20px;z-index:40;animation:fade .15s}
+.dlg{background:var(--surface);color:var(--ink);border-radius:18px;padding:20px;width:100%;max-width:360px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.dlg h3{margin:0;font-size:18px;line-height:1.3}
+.dlg p{margin:8px 0 0;color:var(--muted);font-size:15px;white-space:pre-line}
+.dlg .stack{margin-top:18px}
+
+/* calendar */
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cal-head h2{font-size:18px;margin:0}
+.cal-head h2::first-letter{text-transform:uppercase}
+.cal-head .grp{display:flex;align-items:center}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:12px}
+.dow{text-align:center;font-size:12px;color:var(--muted);font-weight:600;padding:4px 0}
+.cell{border:0;border-radius:10px;background:var(--surface);color:var(--ink);font-size:15px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 0;min-height:56px}
+.cell.empty{background:transparent}
+.cell.today{box-shadow:inset 0 0 0 2px var(--accent-text)}
+.cell.sel{background:var(--accent);color:var(--accent-ink)}
+.dot{font-style:normal;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text);padding:0 5px}
+.dot.late{background:var(--danger-soft);color:var(--danger)}
+.dot.today{background:var(--danger-soft);color:var(--danger)}
+.dot.ph{visibility:hidden}
+.cell.sel .dot{background:var(--accent-ink);color:var(--accent)}
+.month-sum{font-size:13px;color:var(--muted);margin:0 2px 12px}
+
+#toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.2s;z-index:30;font-size:14px;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Caixa Salva</h1>
+  <button class="top-btn" data-act="settings">Ajustes</button>
+</header>
+
+<main>
+  <div id="banners"></div>
+
+  <div class="seg" id="main-seg">
+    <button data-act="view" data-v="list">Lista</button>
+    <button data-act="view" data-v="cal">Calendário</button>
+  </div>
+
+  <section id="view-list">
+    <div class="seg" id="sub-seg">
+      <button data-act="filter" data-f="active">Em aberto</button>
+      <button data-act="filter" data-f="paid">Quitados</button>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section id="view-cal" hidden>
+    <div id="cal"></div>
+  </section>
+</main>
+
+<button class="fab" data-act="new">+ Novo empréstimo</button>
+<div id="sheet-root"></div>
+<div id="dialog-root"></div>
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+
+/* ---------- Constantes e estado ---------- */
+var STORE_KEY = 'emprestimos.v1';
+var RATE = 30; // juros fixos de 30 % por mês
+var db = { version: 1, loans: [], settings: { reminderHour: 9, lastBackup: null } };
+var view = 'list', filter = 'active';
+var calM = null, calSel = null;
+var PREVIEW = false; // a versão de pré-visualização dentro do Claude troca isto para true
+
+/* ---------- Utilitários ---------- */
+function $(s, el) { return (el || document).querySelector(s); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function uid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+function find(id) { return db.loans.find(function (l) { return l.id === id; }); }
+
+/* ---------- Datas (sempre strings AAAA-MM-DD, hora local) ---------- */
+function isoDate(y, m, d) { return y + '-' + pad(m) + '-' + pad(d); }
+function parseISO(s) { var p = s.split('-').map(Number); return { y: p[0], m: p[1], d: p[2] }; }
+function todayISO() { var t = new Date(); return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate()); }
+function tsToISO(ts) { var t = new Date(ts); return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate()); }
+// "um mês depois" (limitado ao fim do mês); com minusDay, um dia a menos
+function monthLater(s, minusDay) {
+  var p = parseISO(s);
+  var y = p.y, m = p.m + 1;
+  if (m > 12) { m = 1; y++; }
+  var dim = new Date(y, m, 0).getDate();
+  var d = Math.min(p.d, dim) - (minusDay ? 1 : 0);
+  var t = new Date(y, m - 1, d);
+  return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate());
+}
+function reminderDate(s) { return monthLater(s, true); }  // ex.: 10/11 -> 09/12
+function dueDate(s) { return monthLater(s, false); }      // ex.: 10/11 -> 10/12
+function diffDays(a, b) {
+  var x = parseISO(a), y = parseISO(b);
+  return Math.round((Date.UTC(y.y, y.m - 1, y.d) - Date.UTC(x.y, x.m - 1, x.d)) / 864e5);
+}
+function fmtShort(s) { var p = parseISO(s); return pad(p.d) + '/' + pad(p.m); }
+function fmtFull(s) { var p = parseISO(s); return pad(p.d) + '/' + pad(p.m) + '/' + p.y; }
+function fmtLong(s) {
+  var p = parseISO(s);
+  return new Date(p.y, p.m - 1, p.d).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/* ---------- Dinheiro (guardado em centavos) ---------- */
+function brl(c) { return (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+function num(c) { return (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function loanTotal(l) { return Math.round(l.valor * (100 + (l.taxa == null ? RATE : l.taxa)) / 100); }
+function fullName(l) { return ((l.nome || '') + ' ' + (l.sobrenome || '')).trim(); }
+function byReminder(a, b) {
+  var x = reminderDate(a.date), y = reminderDate(b.date);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/* ---------- Armazenamento local ---------- */
+function load() {
+  var raw = null;
+  try { raw = localStorage.getItem(STORE_KEY); } catch (e) { return; }
+  if (!raw) return;
+  try {
+    var p = JSON.parse(raw);
+    db = {
+      version: 1,
+      loans: Array.isArray(p.loans) ? p.loans : [],
+      settings: Object.assign({ reminderHour: 9, lastBackup: null }, p.settings || {})
+    };
+  } catch (e) {
+    try { localStorage.setItem(STORE_KEY + '.corrupt', raw); } catch (_) {}
+    notice('Dados ilegíveis', 'Não consegui ler os dados salvos. Uma cópia foi guardada. Se precisar, restaure um backup em Ajustes.');
+  }
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
+  catch (e) { notice('Não salvou', 'Não foi possível salvar os dados neste aparelho. Verifique o espaço e se a navegação privada está desligada.'); }
+}
+
+/* ---------- Toast ---------- */
+var toastTimer = null;
+function toast(msg) {
+  var t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+}
+
+/* ---------- Diálogo de confirmação (no lugar de confirm/alert) ---------- */
+function askConfirm(opt) {
+  return new Promise(function (resolve) {
+    var root = $('#dialog-root');
+    root.innerHTML = '<div class="dlg-back"><div class="dlg" role="alertdialog" aria-modal="true"><h3>' + esc(opt.title) + '</h3>' +
+      (opt.text ? '<p>' + esc(opt.text) + '</p>' : '') +
+      '<div class="stack"><button class="btn ' + (opt.danger ? 'danger' : 'primary') + '" data-dlg="ok">' + esc(opt.ok || 'OK') + '</button>' +
+      (opt.cancel === false ? '' : '<button class="btn" data-dlg="cancel">' + esc(opt.cancel || 'Cancelar') + '</button>') +
+      '</div></div></div>';
+    function onClick(e) {
+      var b = e.target.closest('[data-dlg]');
+      if (!b) return;
+      root.removeEventListener('click', onClick);
+      root.innerHTML = '';
+      resolve(b.dataset.dlg === 'ok');
+    }
+    root.addEventListener('click', onClick);
+  });
+}
+function notice(title, text) { return askConfirm({ title: title, text: text, ok: 'OK', cancel: false }); }
+
+/* ---------- Sheets ---------- */
+function openSheet(html) {
+  $('#sheet-root').innerHTML = '<div class="overlay" data-act="close"><div class="panel" data-act="noop">' + html + '</div></div>';
+  document.body.classList.add('locked');
+}
+function closeSheet() { $('#sheet-root').innerHTML = ''; document.body.classList.remove('locked'); }
+
+/* ---------- Render ---------- */
+function render() {
+  renderBanners();
+  $('#view-list').hidden = view !== 'list';
+  $('#view-cal').hidden = view !== 'cal';
+  Array.prototype.forEach.call(document.querySelectorAll('#main-seg button'), function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === view)); });
+  Array.prototype.forEach.call(document.querySelectorAll('#sub-seg button'), function (b) { b.setAttribute('aria-pressed', String(b.dataset.f === filter)); });
+  if (view === 'list') renderList(); else renderCal();
+}
+
+function needsBackup() {
+  if (!db.loans.length) return false;
+  var base = db.settings.lastBackup;
+  if (!base) {
+    var first = Math.min.apply(null, db.loans.map(function (l) { return l.createdAt || Date.now(); }));
+    base = tsToISO(first);
+  }
+  return diffDays(base, todayISO()) >= 7;
+}
+
+function renderBanners() {
+  var t = todayISO(), h = PREVIEW ? '<p class="note" style="margin:0 4px 12px">Pré-visualização dentro do Claude: os dados ficam só neste navegador e já vêm com exemplos. O Calendário e o backup só funcionam no app instalado no iPhone.</p>' : '';
+  var due = db.loans.filter(function (l) { return l.status !== 'paid' && reminderDate(l.date) <= t; }).sort(byReminder);
+  if (due.length) {
+    h += '<div class="card alert"><p class="alert-title">' + (due.length === 1 ? '1 pessoa para cobrar' : due.length + ' pessoas para cobrar') + '</p>';
+    h += due.map(function (l) {
+      var d = diffDays(reminderDate(l.date), t);
+      var when = d === 0 ? 'lembrete de hoje' : 'lembrete há ' + d + (d === 1 ? ' dia' : ' dias');
+      return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>' + when + ' · vence ' + fmtShort(dueDate(l.date)) + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
+    }).join('');
+    h += '</div>';
+  }
+  if (needsBackup()) {
+    h += '<div class="card soft"><p>Faz mais de uma semana desde o último backup. Se o iPhone for perdido ou o Safari limpar os dados, tudo some.</p><button class="btn" data-act="backup">Fazer backup agora</button></div>';
+  }
+  $('#banners').innerHTML = h;
+}
+
+function renderList() {
+  var act = filter === 'active';
+  var loans = db.loans.filter(function (l) { return act ? l.status !== 'paid' : l.status === 'paid'; });
+  loans.sort(act ? byReminder : function (a, b) { return (b.paidAt || '').localeCompare(a.paidAt || ''); });
+  var el = $('#list');
+  if (!loans.length) {
+    el.innerHTML = '<div class="empty">' + (act
+      ? 'Nenhum empréstimo em aberto.<br>Toque em <b>Novo empréstimo</b> para começar.'
+      : 'Nenhum empréstimo quitado ainda.') + '</div>';
+    return;
+  }
+  var t = todayISO(), sumP = 0, sumT = 0;
+  var rows = loans.map(function (l) {
+    var tot = loanTotal(l); sumP += l.valor; sumT += tot;
+    var cell, cls = '';
+    if (act) { var r = reminderDate(l.date); cell = fmtShort(r); cls = r < t ? 'late' : (r === t ? 'today' : ''); }
+    else cell = l.paidAt ? fmtShort(l.paidAt) : '—';
+    return '<tr data-act="detail" data-id="' + l.id + '"><td class="name">' + esc(fullName(l)) + '</td><td>' + num(l.valor) + '</td><td>' + num(tot) + '</td><td class="' + cls + '">' + cell + '</td></tr>';
+  }).join('');
+  el.innerHTML = '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Com ' + RATE + '%</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
+    '</tbody><tfoot><tr><td>Total · ' + loans.length + '</td><td>' + num(sumP) + '</td><td>' + num(sumT) + '</td><td></td></tr></tfoot></table></div>' +
+    '<p class="note">Valores em reais (R$). Toque em uma linha para ver os detalhes.</p>';
+}
+
+function renderCal() {
+  var y = calM.y, m = calM.m, t = todayISO();
+  var first = new Date(y, m - 1, 1).getDay(), dim = new Date(y, m, 0).getDate();
+  var map = {};
+  db.loans.filter(function (l) { return l.status !== 'paid'; }).forEach(function (l) {
+    var r = reminderDate(l.date); (map[r] = map[r] || []).push(l);
+  });
+  var cells = '';
+  for (var i = 0; i < first; i++) cells += '<span class="cell empty"></span>';
+  for (var d = 1; d <= dim; d++) {
+    var k = isoDate(y, m, d), n = (map[k] || []).length;
+    var tone = k < t ? 'late' : (k === t ? 'today' : '');
+    cells += '<button class="cell' + (k === t ? ' today' : '') + (k === calSel ? ' sel' : '') + '" data-act="cal-day" data-d="' + k + '"><span>' + d + '</span>' +
+      (n ? '<i class="dot ' + tone + '">' + n + '</i>' : '<i class="dot ph">0</i>') + '</button>';
+  }
+  var prefix = y + '-' + pad(m) + '-', cnt = 0, sum = 0;
+  Object.keys(map).forEach(function (k) { if (k.indexOf(prefix) === 0) map[k].forEach(function (l) { cnt++; sum += loanTotal(l); }); });
+  var title = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  var dayLoans = map[calSel] || [];
+  var dow = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(function (x) { return '<span class="dow">' + x + '</span>'; }).join('');
+  $('#cal').innerHTML =
+    '<div class="cal-head"><button class="icon-btn" data-act="cal-prev" aria-label="Mês anterior">‹</button><h2>' + esc(title) + '</h2><div class="grp"><button class="top-btn" data-act="cal-today">Hoje</button><button class="icon-btn" data-act="cal-next" aria-label="Próximo mês">›</button></div></div>' +
+    '<div class="cal-grid">' + dow + cells + '</div>' +
+    '<p class="month-sum">' + (cnt ? cnt + (cnt === 1 ? ' lembrete' : ' lembretes') + ' neste mês · ' + brl(sum) + ' a receber' : 'Nenhum lembrete neste mês.') + '</p>' +
+    '<div class="card pad"><h3>' + esc(fmtLong(calSel)) + '</h3>' +
+    (dayLoans.length ? dayLoans.map(function (l) {
+      return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>emprestado ' + brl(l.valor) + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
+    }).join('') : '<p class="muted" style="margin:0">Nenhum lembrete neste dia.</p>') + '</div>';
+}
+
+function moveMonth(delta) {
+  var m = calM.m + delta, y = calM.y;
+  if (m < 1) { m = 12; y--; }
+  if (m > 12) { m = 1; y++; }
+  calM = { y: y, m: m };
+  var t = new Date();
+  calSel = (t.getFullYear() === y && t.getMonth() + 1 === m) ? todayISO() : isoDate(y, m, 1);
+  renderCal();
+}
+
+/* ---------- Formulário ---------- */
+function openForm(id) {
+  var l = id ? find(id) : null, v = l || {};
+  var html =
+    '<form id="loan-form" novalidate data-id="' + (l ? l.id : '') + '" data-taxa="' + (l && l.taxa != null ? l.taxa : RATE) + '">' +
+    '<div class="sheet-head"><h2>' + (l ? 'Editar empréstimo' : 'Novo empréstimo') + '</h2><button type="button" class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' +
+    '<div class="grid2">' +
+      '<label>Nome<input name="nome" autocomplete="off" autocapitalize="words" value="' + esc(v.nome) + '"></label>' +
+      '<label>Sobrenome<input name="sobrenome" autocomplete="off" autocapitalize="words" value="' + esc(v.sobrenome) + '"></label>' +
+    '</div>' +
+    '<label>CPF<input name="cpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" data-mask="cpf" value="' + esc(v.cpf) + '"></label>' +
+    '<label>Telefone<input name="phone" type="tel" inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000" data-mask="phone" value="' + esc(v.phone) + '"></label>' +
+    '<label>Endereço<input name="endereco" autocomplete="off" autocapitalize="words" value="' + esc(v.endereco) + '"></label>' +
+    '<label>Profissão<input name="profissao" autocomplete="off" autocapitalize="sentences" value="' + esc(v.profissao) + '"></label>' +
+    '<label>Salário mensal (R$)<input name="salario" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-cents="' + (v.salario || 0) + '" value="' + (v.salario ? num(v.salario) : '') + '"></label>' +
+    '<div class="loan-box">' +
+      '<label>Valor emprestado (R$)<input name="valor" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-cents="' + (v.valor || 0) + '" value="' + (v.valor ? num(v.valor) : '') + '"></label>' +
+      '<label>Data do empréstimo<input name="date" type="date" value="' + esc(v.date || todayISO()) + '"></label>' +
+      '<p class="preview" id="preview"></p>' +
+    '</div>' +
+    (l ? '<p class="help">Se você mudar o valor ou a data, adicione o lembrete ao Calendário de novo para atualizar o aviso.</p>' : '') +
+    '<p class="err" id="form-err" role="alert"></p>' +
+    '<button class="btn primary" type="submit">Salvar</button>' +
+    '</form>';
+  openSheet(html);
+  updatePreview();
+}
+
+function centsOf(inp) { return parseInt(inp.dataset.cents || '0', 10) || 0; }
+
+function updatePreview() {
+  var f = $('#loan-form'); if (!f) return;
+  var c = centsOf(f.elements.valor), d = f.elements.date.value, out = $('#preview');
+  var taxa = parseInt(f.dataset.taxa, 10); if (isNaN(taxa)) taxa = RATE;
+  if (!c || !/^\d{4}-\d{2}-\d{2}$/.test(d)) { out.textContent = 'Informe o valor e a data para ver o total e o lembrete.'; return; }
+  out.textContent = 'Total a receber: ' + brl(Math.round(c * (100 + taxa) / 100)) + ' · Lembrete em ' + fmtFull(reminderDate(d));
+}
+
+function submitForm(f) {
+  var el = f.elements, err = $('#form-err');
+  function fail(msg, field) { err.textContent = msg; if (field) field.focus(); }
+  var nome = el.nome.value.trim(), valor = centsOf(el.valor), date = el.date.value;
+  if (!nome) return fail('Informe o nome.', el.nome);
+  if (!valor) return fail('Informe o valor emprestado.', el.valor);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Informe a data do empréstimo.', el.date);
+  var data = {
+    nome: nome, sobrenome: el.sobrenome.value.trim(), cpf: el.cpf.value.trim(), phone: el.phone.value.trim(),
+    endereco: el.endereco.value.trim(), profissao: el.profissao.value.trim(), salario: centsOf(el.salario),
+    valor: valor, date: date
+  };
+  var editId = f.dataset.id, loan;
+  if (editId) { loan = find(editId); Object.assign(loan, data); }
+  else {
+    loan = Object.assign({ id: uid(), taxa: RATE, status: 'active', paidAt: null, createdAt: Date.now() }, data);
+    db.loans.push(loan);
+  }
+  save(); closeSheet(); render();
+  if (editId) toast('Alterações salvas'); else openSaved(loan.id);
+}
+
+function maskCPF(v) {
+  var d = v.replace(/\D/g, '').slice(0, 11), o = d.slice(0, 3);
+  if (d.length > 3) o += '.' + d.slice(3, 6);
+  if (d.length > 6) o += '.' + d.slice(6, 9);
+  if (d.length > 9) o += '-' + d.slice(9, 11);
+  return o;
+}
+function maskPhone(v) {
+  var d = v.replace(/\D/g, '').slice(0, 11);
+  if (!d) return '';
+  if (d.length <= 2) return '(' + d;
+  var split = d.length > 10 ? 7 : 6;
+  var o = '(' + d.slice(0, 2) + ') ' + d.slice(2, split);
+  if (d.length > split) o += '-' + d.slice(split);
+  return o;
+}
+
+/* ---------- Detalhes ---------- */
+function kv(rows) {
+  return '<dl class="kv">' + rows.filter(function (r) { return r[1]; }).map(function (r) {
+    return '<dt>' + r[0] + '</dt><dd>' + esc(r[1]) + '</dd>';
+  }).join('') + '</dl>';
+}
+function phoneDigits(p) {
+  var d = (p || '').replace(/\D/g, '');
+  if (d.length === 10 || d.length === 11) d = '55' + d;
+  return d;
+}
+
+function openDetail(id) {
+  var l = find(id); if (!l) return;
+  var paid = l.status === 'paid', total = loanTotal(l), t = todayISO();
+  var r = reminderDate(l.date);
+  var chip = paid ? '<span class="chip">Quitado</span>' : (r < t ? '<span class="chip late">Para cobrar</span>' : (r === t ? '<span class="chip late">Cobrar hoje</span>' : ''));
+  var rows = [
+    ['Valor emprestado', brl(l.valor)],
+    ['Com juros (' + (l.taxa == null ? RATE : l.taxa) + '%)', brl(total)],
+    ['Emprestado em', fmtFull(l.date)],
+    paid ? ['Quitado em', l.paidAt ? fmtFull(l.paidAt) : ''] : ['Lembrete em', fmtFull(r)],
+    paid ? ['', ''] : ['Vencimento', fmtFull(dueDate(l.date))],
+    ['Telefone', l.phone], ['CPF', l.cpf], ['Endereço', l.endereco], ['Profissão', l.profissao],
+    ['Salário mensal', l.salario ? brl(l.salario) : '']
+  ];
+  var btns = '';
+  var digits = phoneDigits(l.phone);
+  var contact = '';
+  if (digits) {
+    var msg = 'Olá ' + l.nome + ', tudo bem? Passando para lembrar do pagamento de ' + brl(total).replace(/\u00a0/g, ' ') + ', combinado para ' + fmtShort(dueDate(l.date)) + '.';
+    contact = '<div class="grid2"><a class="btn" target="_blank" rel="noopener" href="https://wa.me/' + digits + '?text=' + encodeURIComponent(msg) + '">WhatsApp</a><a class="btn" href="tel:+' + digits + '">Ligar</a></div>';
+  }
+  if (!paid) {
+    btns += '<button class="btn primary" data-act="pay" data-id="' + id + '">Marcar como pago</button>' +
+      '<button class="btn" data-act="cal-add" data-id="' + id + '">Adicionar lembrete ao Calendário</button>' +
+      '<button class="btn link" data-act="cal-add-alt" data-id="' + id + '">Não abriu? Tente outra forma</button>' + contact;
+  } else {
+    btns += '<button class="btn" data-act="reopen" data-id="' + id + '">Reabrir empréstimo</button>';
+  }
+  btns += '<div class="grid2"><button class="btn" data-act="edit" data-id="' + id + '">Editar</button><button class="btn danger" data-act="delete" data-id="' + id + '">Excluir</button></div>';
+  openSheet('<div class="sheet-head"><h2>' + esc(fullName(l)) + chip + '</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' + kv(rows) + '<div class="stack">' + btns + '</div>');
+}
+
+function openSaved(id) {
+  var l = find(id), r = reminderDate(l.date), t = todayISO();
+  var past = r <= t ? '<p class="muted">Essa data já passou ou é hoje, então o aviso do Calendário não vai tocar.</p>' : '';
+  openSheet(
+    '<div class="done"><div class="check">✓</div><h2>Empréstimo salvo</h2>' +
+    '<p>' + esc(fullName(l)) + ' · ' + brl(l.valor) + ' → <b>' + brl(loanTotal(l)) + '</b></p>' +
+    '<p class="muted">Lembrete: <b>' + esc(fmtLong(r)) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p>' + past + '</div>' +
+    '<div class="stack"><button class="btn primary" data-act="cal-add" data-id="' + id + '">Adicionar lembrete ao Calendário</button>' +
+    '<button class="btn link" data-act="cal-add-alt" data-id="' + id + '">Não abriu? Tente outra forma</button>' +
+    '<button class="btn" data-act="close">Agora não</button></div>');
+}
+
+async function payLoan(id) {
+  var l = find(id); if (!l) return;
+  var extra = reminderDate(l.date) > todayISO() ? 'O lembrete já adicionado ao Calendário ainda vai tocar: apague-o por lá.' : '';
+  var yes = await askConfirm({ title: fullName(l) + ' pagou ' + plain(brl(loanTotal(l))) + '?', text: extra, ok: 'Sim, quitar', cancel: 'Ainda não' });
+  if (!yes) return;
+  l.status = 'paid'; l.paidAt = todayISO();
+  save(); closeSheet(); render(); toast('Empréstimo quitado');
+}
+
+/* ---------- Lembrete no Calendário (.ics) ---------- */
+function icsEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+function foldLine(line) {
+  var out = [], s = line;
+  while (s.length > 74) { out.push(s.slice(0, 74)); s = ' ' + s.slice(74); }
+  out.push(s);
+  return out.join('\r\n');
+}
+function plain(s) { return s.replace(/\u00a0/g, ' '); }
+function makeICS(l) {
+  var r = parseISO(reminderDate(l.date)), h = db.settings.reminderHour;
+  var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  var day = '' + r.y + pad(r.m) + pad(r.d);
+  var title = 'Cobrar ' + fullName(l) + ' — ' + plain(brl(loanTotal(l)));
+  var desc = ['Valor a receber: ' + plain(brl(loanTotal(l))),
+    'Emprestado: ' + plain(brl(l.valor)) + ' em ' + fmtFull(l.date),
+    'Vencimento: ' + fmtFull(dueDate(l.date))];
+  if (l.phone) desc.push('Telefone: ' + l.phone);
+  var lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Emprestimos//PT-BR//', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:' + l.id + '-lembrete@emprestimos.local',
+    'DTSTAMP:' + stamp,
+    'DTSTART:' + day + 'T' + pad(h) + '0000',
+    'DTEND:' + day + 'T' + pad(h) + '3000',
+    'SUMMARY:' + icsEscape(title),
+    'DESCRIPTION:' + icsEscape(desc.join('\n')),
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(title), 'TRIGGER:PT0S', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'
+  ];
+  return lines.map(foldLine).join('\r\n') + '\r\n';
+}
+function slug(s) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cliente';
+}
+async function addToCalendar(id, alt) {
+  if (PREVIEW) { notice('Indisponível aqui', 'Na pré-visualização dentro do Claude o Calendário não abre. Esta função só vale no app instalado na tela inicial do iPhone.'); return; }
+  var l = find(id); if (!l) return;
+  var text = makeICS(l), name = 'lembrete-' + slug(fullName(l)) + '.ics';
+  if (!alt) {
+    try {
+      var file = new File([text], name, { type: 'text/calendar' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Lembrete de cobrança' });
+        return;
+      }
+    } catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  var url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }));
+  var w = window.open(url, '_blank');
+  if (!w) notice('Não abriu', 'Este navegador bloqueou o arquivo do Calendário. Abra o app instalado na tela inicial do iPhone e tente de novo.');
+  setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+}
+
+/* ---------- Ajustes e backup ---------- */
+function openSettings() {
+  var hours = '';
+  for (var h = 6; h <= 20; h++) hours += '<option value="' + h + '"' + (h === db.settings.reminderHour ? ' selected' : '') + '>' + pad(h) + ':00</option>';
+  var last = db.settings.lastBackup ? fmtFull(db.settings.lastBackup) : 'nunca';
+  openSheet(
+    '<div class="sheet-head"><h2>Ajustes</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' +
+    '<label>Hora do aviso no Calendário<select id="hour-select">' + hours + '</select></label>' +
+    '<p class="help">Vale para os próximos lembretes que você adicionar.</p>' +
+    '<div class="card pad"><h3 style="text-transform:none">Backup</h3>' +
+    '<p class="help" style="margin-top:0">Os dados ficam somente neste aparelho. Último backup: <b>' + last + '</b>. O arquivo contém dados pessoais dos clientes: guarde-o em um lugar seguro (por exemplo, no app Arquivos).</p>' +
+    '<div class="stack"><button class="btn primary" data-act="backup">Fazer backup</button>' +
+    '<label class="btn" style="margin:0">Restaurar backup<input id="import-file" type="file" accept=".json,application/json" hidden></label></div></div>');
+}
+
+async function doBackup() {
+  if (PREVIEW) { notice('Indisponível aqui', 'Na pré-visualização dentro do Claude o backup não pode ser salvo. Esta função só vale no app instalado na tela inicial do iPhone.'); return; }
+  var text = JSON.stringify(db, null, 2), name = 'caixa-salva-backup-' + todayISO() + '.json';
+  var done = false;
+  try {
+    var file = new File([text], name, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      done = true;
+    }
+  } catch (err) { if (err && err.name === 'AbortError') return; }
+  if (!done) {
+    var url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    var a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  }
+  db.settings.lastBackup = todayISO(); save(); render();
+  if ($('#hour-select')) openSettings();
+  toast('Backup feito');
+}
+
+function importBackup(file) {
+  var r = new FileReader();
+  r.onload = async function () {
+    var p;
+    try {
+      p = JSON.parse(r.result);
+      var ok = p && Array.isArray(p.loans) && p.loans.every(function (l) {
+        return l && typeof l.id === 'string' && Number.isInteger(l.valor) && /^\d{4}-\d{2}-\d{2}$/.test(l.date || '');
+      });
+      if (!ok) throw new Error('invalid');
+    } catch (e) { notice('Arquivo inválido', 'Esse arquivo não é um backup deste app.'); return; }
+    var go = await askConfirm({ title: 'Restaurar este backup?', text: 'Os dados deste aparelho serão substituídos por ' + p.loans.length + ' empréstimo(s) do arquivo.', ok: 'Restaurar', danger: true });
+    if (!go) return;
+    db = { version: 1, loans: p.loans, settings: Object.assign({ reminderHour: 9, lastBackup: null }, p.settings || {}) };
+    save(); closeSheet(); render(); toast('Backup restaurado');
+  };
+  r.readAsText(file);
+}
+
+/* ---------- Eventos ---------- */
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-act]');
+  if (!el) return;
+  var a = el.dataset.act, id = el.dataset.id;
+  switch (a) {
+    case 'noop': return;
+    case 'close': closeSheet(); break;
+    case 'new': openForm(); break;
+    case 'detail': openDetail(id); break;
+    case 'edit': openForm(id); break;
+    case 'view': view = el.dataset.v; render(); break;
+    case 'filter': filter = el.dataset.f; render(); break;
+    case 'pay': payLoan(id); break;
+    case 'reopen': var l = find(id); if (l) { l.status = 'active'; l.paidAt = null; save(); closeSheet(); render(); toast('Empréstimo reaberto'); } break;
+    case 'delete':
+      askConfirm({ title: 'Excluir este empréstimo?', text: 'Isso não pode ser desfeito.', ok: 'Excluir', danger: true }).then(function (yes) {
+        if (!yes) return;
+        db.loans = db.loans.filter(function (x) { return x.id !== id; }); save(); closeSheet(); render(); toast('Excluído');
+      });
+      break;
+    case 'cal-add': addToCalendar(id, false); break;
+    case 'cal-add-alt': addToCalendar(id, true); break;
+    case 'cal-prev': moveMonth(-1); break;
+    case 'cal-next': moveMonth(1); break;
+    case 'cal-today': var t = new Date(); calM = { y: t.getFullYear(), m: t.getMonth() + 1 }; calSel = todayISO(); renderCal(); break;
+    case 'cal-day': calSel = el.dataset.d; renderCal(); break;
+    case 'settings': openSettings(); break;
+    case 'backup': doBackup(); break;
+  }
+});
+
+document.addEventListener('submit', function (e) {
+  if (e.target.id === 'loan-form') { e.preventDefault(); submitForm(e.target); }
+});
+
+document.addEventListener('input', function (e) {
+  var t = e.target, m = t.dataset && t.dataset.mask;
+  if (m === 'money') {
+    var d = t.value.replace(/\D/g, '').slice(0, 12), c = d ? parseInt(d, 10) : 0;
+    t.dataset.cents = c; t.value = d ? num(c) : '';
+  } else if (m === 'cpf') t.value = maskCPF(t.value);
+  else if (m === 'phone') t.value = maskPhone(t.value);
+  if (t.closest && t.closest('#loan-form')) { updatePreview(); var er = $('#form-err'); if (er) er.textContent = ''; }
+});
+
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'hour-select') {
+    db.settings.reminderHour = parseInt(e.target.value, 10); save();
+    toast('Aviso às ' + pad(db.settings.reminderHour) + ':00');
+  } else if (e.target.id === 'import-file' && e.target.files[0]) {
+    importBackup(e.target.files[0]);
+  } else if (e.target.closest && e.target.closest('#loan-form')) updatePreview();
+});
+
+document.addEventListener('visibilitychange', function () { if (!document.hidden && !$('.overlay')) render(); });
+
+/* ---------- Início ---------- */
+load();
+(function () { var t = new Date(); calM = { y: t.getFullYear(), m: t.getMonth() + 1 }; calSel = todayISO(); })();
+render();
+if (!PREVIEW && 'serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(function () {});
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+</script>
+</body>
+</html>
