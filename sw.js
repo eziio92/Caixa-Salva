@@ -1,11 +1,14 @@
 // Service worker: abre o app sem internet e entrega o lembrete como arquivo de calendário (.ics).
 // Estratégia: tenta a rede primeiro (para receber atualizações) e usa o cache se estiver offline.
+// A rede é sempre consultada de novo ("no-cache"): o GitHub Pages deixa o navegador reutilizar a página por até
+// 10 minutos, e abrir o app logo antes da publicação terminar prendia a versão velha durante esse tempo.
 // Ao publicar uma nova versão do app, basta mudar o número abaixo.
-const CACHE = 'caixa-salva-v3';
+const CACHE = 'caixa-salva-v4';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // 'reload' ignora o cache HTTP do navegador, para não guardar uma cópia velha dos arquivos
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -46,7 +49,7 @@ self.addEventListener('fetch', (e) => {
   }
 
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
