@@ -100,6 +100,18 @@ input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px
 .chip.late{background:var(--danger-soft);color:var(--danger)}
 .done{text-align:center;padding:6px 0 16px}
 .done .check{width:54px;height:54px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:28px;font-weight:700;margin:4px auto 10px}
+.ck{width:76px;height:76px;display:block;margin:6px auto 12px;overflow:visible}
+.ck-c{fill:var(--accent)}
+.ck-ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0;transform-box:fill-box;transform-origin:center}
+.ck-p{fill:none;stroke:var(--accent-ink);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:36;stroke-dashoffset:0}
+.play .ck{animation:pop .5s cubic-bezier(.2,1.4,.4,1) both}
+.play .ck-ring{animation:ring .8s .15s ease-out both}
+.play .ck-p{stroke-dashoffset:36;animation:draw .45s .25s ease-out forwards}
+.play h2,.play p{animation:fade .45s .4s both}
+@keyframes pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+@keyframes ring{from{transform:scale(1);opacity:.8}to{transform:scale(1.7);opacity:0}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){.play .ck,.play .ck-ring,.play .ck-p,.play h2,.play p{animation:none}.play .ck-p{stroke-dashoffset:0}}
 .done h2{margin:0 0 6px}
 .done p{margin:4px 0}
 .help{font-size:13px;color:var(--muted);margin:6px 0 14px}
@@ -438,7 +450,7 @@ function submitForm(f) {
     valor: valor, date: date
   };
   var editId = f.dataset.id, loan;
-  if (editId) { loan = find(editId); Object.assign(loan, data); }
+  if (editId) { loan = find(editId); if (loan.date !== data.date || loan.valor !== data.valor) delete loan.calAt; Object.assign(loan, data); }
   else {
     loan = Object.assign({ id: uid(), taxa: RATE, status: 'active', paidAt: null, createdAt: Date.now() }, data);
     db.loans.push(loan);
@@ -488,7 +500,8 @@ function openDetail(id) {
     paid ? ['Quitado em', l.paidAt ? fmtFull(l.paidAt) : ''] : ['Lembrete em', fmtFull(r)],
     paid ? ['', ''] : ['Vencimento', fmtFull(dueDate(l.date))],
     ['Telefone', l.phone], ['CPF', l.cpf], ['Endereço', l.endereco], ['Profissão', l.profissao],
-    ['Salário mensal', l.salario ? brl(l.salario) : '']
+    ['Salário mensal', l.salario ? brl(l.salario) : ''],
+    ['Calendário', !paid && l.calAt ? 'Lembrete adicionado em ' + fmtFull(l.calAt) : '']
   ];
   var btns = '';
   var digits = phoneDigits(l.phone);
@@ -576,17 +589,59 @@ function icsToB64(text) {
 function calLink(l, kind) {
   var href = 'lembrete.ics?c=' + icsToB64(makeICS(l));
   if (kind === 'alt') return '<a class="btn link" data-act="cal-add" data-id="' + l.id + '" download="lembrete-' + slug(fullName(l)) + '.ics" href="' + esc(href) + '">Não abriu? Tente outra forma</a>';
-  return '<a class="btn' + (kind === 'primary' ? ' primary' : '') + '" data-act="cal-add" data-id="' + l.id + '" href="' + esc(href) + '">Adicionar lembrete ao Calendário</a>';
+  return '<a class="btn' + (kind === 'primary' ? ' primary' : '') + '" data-act="cal-add" data-id="' + l.id + '" href="' + esc(href) + '">' + (l.calAt ? 'Adicionar de novo ao Calendário' : 'Adicionar lembrete ao Calendário') + '</a>';
 }
 // Antes de seguir o link, confirma que o service worker está ativo: se não estiver, o endereço (com nome e telefone) iria para a internet.
-function calGuard(e) {
+function calGuard(e, id) {
   if (PREVIEW) {
     e.preventDefault();
     notice('Indisponível aqui', 'Na pré-visualização dentro do Claude o Calendário não abre. Esta função só vale no app instalado na tela inicial do iPhone.');
   } else if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
     e.preventDefault();
     notice('Quase pronto', 'Feche o app por completo (deslize para cima no seletor de apps), abra de novo e toque neste botão outra vez.');
+  } else {
+    calStart(id);
   }
+}
+
+// O iPhone abre a tela do Calendário por cima do app e não avisa quando ela é fechada (nem se tocou em "Adicionar" ou no X).
+// Então: logo depois do toque, a tela de baixo já troca para "Lembrete adicionado"; quando o app volta a receber toque ou foco,
+// toca a animação de confirmação e a tela se fecha sozinha.
+var calPending = null, calSwallowUntil = 0;
+var CAL_EVENTS = [['visibilitychange', document], ['pageshow', window], ['focus', window]];
+var CAL_TOUCH = ['pointerdown', 'touchstart', 'keydown'];
+
+function calDoneHtml(l, play) {
+  return '<div class="done' + (play ? ' play' : '') + '"><svg class="ck" viewBox="0 0 52 52" aria-hidden="true"><circle class="ck-ring" cx="26" cy="26" r="24"/><circle class="ck-c" cx="26" cy="26" r="24"/><path class="ck-p" d="M15 27l8 8 14-16"/></svg>' +
+    '<h2>Lembrete adicionado</h2><p class="muted">O aviso toca em <b>' + esc(fmtLong(reminderDate(l.date))) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p></div>';
+}
+function calStart(id) {
+  if (calPending) return;
+  calPending = { id: id, t: Date.now(), armed: false };
+  setTimeout(calShowDone, 400);
+}
+function calShowDone() {
+  var c = calPending; if (!c) return;
+  var l = find(c.id), p = $('#sheet-root .panel');
+  if (!l || !p) { calPending = null; return; }
+  l.calAt = todayISO(); save();
+  p.innerHTML = calDoneHtml(l, false);
+  c.armed = true;
+  CAL_EVENTS.forEach(function (x) { x[1].addEventListener(x[0], calReturned, true); });
+  CAL_TOUCH.forEach(function (n) { document.addEventListener(n, calReturned, true); });
+}
+function calReturned(e) {
+  var c = calPending; if (!c || !c.armed) return;
+  if (e.type === 'visibilitychange' && document.visibilityState !== 'visible') return;
+  if (Date.now() - c.t < 1200) return;   // ainda é a abertura da tela do Calendário
+  CAL_EVENTS.forEach(function (x) { x[1].removeEventListener(x[0], calReturned, true); });
+  CAL_TOUCH.forEach(function (n) { document.removeEventListener(n, calReturned, true); });
+  calPending = null;
+  calSwallowUntil = Date.now() + 700;    // o toque que trouxe o app de volta não deve fechar a tela antes da animação
+  var l = find(c.id), p = $('#sheet-root .panel');
+  if (!l || !p) { render(); return; }
+  p.innerHTML = calDoneHtml(l, true);
+  setTimeout(function () { closeSheet(); render(); }, 1800);
 }
 
 /* ---------- Ajustes e backup ---------- */
@@ -647,6 +702,7 @@ function importBackup(file) {
 
 /* ---------- Eventos ---------- */
 document.addEventListener('click', function (e) {
+  if (Date.now() < calSwallowUntil) { e.preventDefault(); return; }
   var el = e.target.closest('[data-act]');
   if (!el) return;
   var a = el.dataset.act, id = el.dataset.id;
@@ -666,7 +722,7 @@ document.addEventListener('click', function (e) {
         db.loans = db.loans.filter(function (x) { return x.id !== id; }); save(); closeSheet(); render(); toast('Excluído');
       });
       break;
-    case 'cal-add': calGuard(e); break;
+    case 'cal-add': calGuard(e, id); break;
     case 'cal-prev': moveMonth(-1); break;
     case 'cal-next': moveMonth(1); break;
     case 'cal-today': var t = new Date(); calM = { y: t.getFullYear(), m: t.getMonth() + 1 }; calSel = todayISO(); renderCal(); break;
