@@ -499,8 +499,7 @@ function openDetail(id) {
   }
   if (!paid) {
     btns += '<button class="btn primary" data-act="pay" data-id="' + id + '">Marcar como pago</button>' +
-      '<button class="btn" data-act="cal-add" data-id="' + id + '">Adicionar lembrete ao Calendário</button>' +
-      '<button class="btn link" data-act="cal-add-alt" data-id="' + id + '">Não abriu? Tente outra forma</button>' + contact;
+      calLink(l) + calLink(l, 'alt') + contact;
   } else {
     btns += '<button class="btn" data-act="reopen" data-id="' + id + '">Reabrir empréstimo</button>';
   }
@@ -515,8 +514,7 @@ function openSaved(id) {
     '<div class="done"><div class="check">✓</div><h2>Empréstimo salvo</h2>' +
     '<p>' + esc(fullName(l)) + ' · ' + brl(l.valor) + ' → <b>' + brl(loanTotal(l)) + '</b></p>' +
     '<p class="muted">Lembrete: <b>' + esc(fmtLong(r)) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p>' + past + '</div>' +
-    '<div class="stack"><button class="btn primary" data-act="cal-add" data-id="' + id + '">Adicionar lembrete ao Calendário</button>' +
-    '<button class="btn link" data-act="cal-add-alt" data-id="' + id + '">Não abriu? Tente outra forma</button>' +
+    '<div class="stack">' + calLink(l, 'primary') + calLink(l, 'alt') +
     '<button class="btn" data-act="close">Agora não</button></div>');
 }
 
@@ -559,6 +557,7 @@ function makeICS(l) {
     'SUMMARY:' + icsEscape(title),
     'DESCRIPTION:' + icsEscape(desc.join('\n')),
     'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(title), 'TRIGGER:PT0S', 'END:VALARM',
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(title), 'TRIGGER:-PT1H', 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR'
   ];
   return lines.map(foldLine).join('\r\n') + '\r\n';
@@ -566,54 +565,28 @@ function makeICS(l) {
 function slug(s) {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cliente';
 }
-async function addToCalendar(id, alt) {
-  if (PREVIEW) { notice('Indisponível aqui', 'Na pré-visualização dentro do Claude o Calendário não abre. Esta função só vale no app instalado na tela inicial do iPhone.'); return; }
-  var l = find(id); if (!l) return;
-  var text = makeICS(l), name = 'lembrete-' + slug(fullName(l)) + '.ics';
-  if (!alt) {
-    try {
-      var file = new File([text], name, { type: 'text/calendar' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Lembrete de cobrança' });
-        return;
-      }
-    } catch (err) { if (err && err.name === 'AbortError') return; }
-  }
-  var url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }));
-  var w = window.open(url, '_blank');
-  if (!w) notice('Não abriu', 'Este navegador bloqueou o arquivo do Calendário. Abra o app instalado na tela inicial do iPhone e tente de novo.');
-  setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-}
-
-/* ---------- Teste dos métodos de abrir o Calendário ---------- */
+/* ---------- Lembrete no Calendário do iPhone ---------- */
+// O texto do lembrete vai codificado no endereço; o service worker (sw.js) o devolve como arquivo .ics de verdade,
+// sem sair do aparelho. É isso que faz o iPhone abrir a tela "Adicionar ao Calendário".
 function icsToB64(text) {
   var bytes = new TextEncoder().encode(text), bin = '';
   bytes.forEach(function (b) { bin += String.fromCharCode(b); });
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function icsUrl(text) { return 'lembrete.ics?c=' + icsToB64(text); } // o service worker devolve isto como arquivo .ics
-
-function openCalTest() {
-  var fake = { id: 'teste-calendario', nome: 'TESTE Caixa Salva', sobrenome: '(pode apagar)', valor: 10000, taxa: 30, date: todayISO(), phone: '' };
-  var text = makeICS(fake);
-  var blobUrl = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }));
-  var dataUrl = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(text);
-  var swUrl = icsUrl(text);
-  openSheet(
-    '<div class="sheet-head"><h2>Testar Calendário</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' +
-    '<p class="help" style="margin-top:0">Toque em cada método. O que funciona abre uma tela do iPhone com o evento e um botão para adicionar ao Calendário. É um evento de teste, pode apagar depois.</p>' +
-    '<p class="help" id="sw-status">Verificando o arquivo de lembrete…</p>' +
-    '<div class="stack">' +
-    '<a class="btn" target="_blank" rel="noopener" href="' + esc(blobUrl) + '">Método 1 · arquivo temporário</a>' +
-    '<a class="btn" target="_blank" rel="noopener" href="' + esc(dataUrl) + '">Método 2 · dados no link</a>' +
-    '<a class="btn" href="' + esc(swUrl) + '">Método 3 · endereço do app, mesma tela</a>' +
-    '<a class="btn" target="_blank" rel="noopener" href="' + esc(swUrl) + '">Método 4 · endereço do app, nova tela</a>' +
-    '<a class="btn" download="lembrete.ics" href="' + esc(swUrl) + '">Método 5 · baixar o arquivo</a>' +
-    '</div>');
-  fetch(swUrl, { cache: 'no-store' }).then(function (r) { return r.headers.get('content-type') || ''; }).then(function (ct) {
-    var el = $('#sw-status'); if (!el) return;
-    el.textContent = /text\/calendar/.test(ct) ? 'Métodos 3, 4 e 5: prontos.' : 'Métodos 3, 4 e 5 ainda não estão prontos: feche o app, abra de novo e volte aqui.';
-  }).catch(function () { var el = $('#sw-status'); if (el) el.textContent = 'Não foi possível verificar os métodos 3, 4 e 5.'; });
+function calLink(l, kind) {
+  var href = 'lembrete.ics?c=' + icsToB64(makeICS(l));
+  if (kind === 'alt') return '<a class="btn link" data-act="cal-add" data-id="' + l.id + '" download="lembrete-' + slug(fullName(l)) + '.ics" href="' + esc(href) + '">Não abriu? Tente outra forma</a>';
+  return '<a class="btn' + (kind === 'primary' ? ' primary' : '') + '" data-act="cal-add" data-id="' + l.id + '" href="' + esc(href) + '">Adicionar lembrete ao Calendário</a>';
+}
+// Antes de seguir o link, confirma que o service worker está ativo: se não estiver, o endereço (com nome e telefone) iria para a internet.
+function calGuard(e) {
+  if (PREVIEW) {
+    e.preventDefault();
+    notice('Indisponível aqui', 'Na pré-visualização dentro do Claude o Calendário não abre. Esta função só vale no app instalado na tela inicial do iPhone.');
+  } else if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+    e.preventDefault();
+    notice('Quase pronto', 'Feche o app por completo (deslize para cima no seletor de apps), abra de novo e toque neste botão outra vez.');
+  }
 }
 
 /* ---------- Ajustes e backup ---------- */
@@ -628,10 +601,7 @@ function openSettings() {
     '<div class="card pad"><h3 style="text-transform:none">Backup</h3>' +
     '<p class="help" style="margin-top:0">Os dados ficam somente neste aparelho. Último backup: <b>' + last + '</b>. O arquivo contém dados pessoais dos clientes: guarde-o em um lugar seguro (por exemplo, no app Arquivos).</p>' +
     '<div class="stack"><button class="btn primary" data-act="backup">Fazer backup</button>' +
-    '<label class="btn" style="margin:0">Restaurar backup<input id="import-file" type="file" accept=".json,application/json" hidden></label></div></div>' +
-    '<div class="card pad"><h3 style="text-transform:none">Calendário</h3>' +
-    '<p class="help" style="margin-top:0">Se o lembrete não abre o Calendário, teste outras formas.</p>' +
-    '<button class="btn" data-act="cal-test">Testar métodos do Calendário</button></div>');
+    '<label class="btn" style="margin:0">Restaurar backup<input id="import-file" type="file" accept=".json,application/json" hidden></label></div></div>');
 }
 
 async function doBackup() {
@@ -696,15 +666,13 @@ document.addEventListener('click', function (e) {
         db.loans = db.loans.filter(function (x) { return x.id !== id; }); save(); closeSheet(); render(); toast('Excluído');
       });
       break;
-    case 'cal-add': addToCalendar(id, false); break;
-    case 'cal-add-alt': addToCalendar(id, true); break;
+    case 'cal-add': calGuard(e); break;
     case 'cal-prev': moveMonth(-1); break;
     case 'cal-next': moveMonth(1); break;
     case 'cal-today': var t = new Date(); calM = { y: t.getFullYear(), m: t.getMonth() + 1 }; calSel = todayISO(); renderCal(); break;
     case 'cal-day': calSel = el.dataset.d; renderCal(); break;
     case 'settings': openSettings(); break;
     case 'backup': doBackup(); break;
-    case 'cal-test': openCalTest(); break;
   }
 });
 
