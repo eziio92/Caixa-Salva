@@ -104,6 +104,7 @@ input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px
 .ck-c{fill:var(--accent)}
 .ck-ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0;transform-box:fill-box;transform-origin:center}
 .ck-p{fill:none;stroke:var(--accent-ink);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:36;stroke-dashoffset:0}
+.wait{visibility:hidden}
 .play .ck{animation:pop .5s cubic-bezier(.2,1.4,.4,1) both}
 .play .ck-ring{animation:ring .8s .15s ease-out both}
 .play .ck-p{stroke-dashoffset:36;animation:draw .45s .25s ease-out forwards}
@@ -611,8 +612,8 @@ var calPending = null, calSwallowUntil = 0;
 var CAL_EVENTS = [['visibilitychange', document], ['pageshow', window], ['focus', window]];
 var CAL_TOUCH = ['pointerdown', 'touchstart', 'keydown'];
 
-function calDoneHtml(l, play) {
-  return '<div class="done' + (play ? ' play' : '') + '"><svg class="ck" viewBox="0 0 52 52" aria-hidden="true"><circle class="ck-ring" cx="26" cy="26" r="24"/><circle class="ck-c" cx="26" cy="26" r="24"/><path class="ck-p" d="M15 27l8 8 14-16"/></svg>' +
+function calDoneHtml(l, mode) {
+  return '<div class="done ' + mode + '"><svg class="ck" viewBox="0 0 52 52" aria-hidden="true"><circle class="ck-ring" cx="26" cy="26" r="24"/><circle class="ck-c" cx="26" cy="26" r="24"/><path class="ck-p" d="M15 27l8 8 14-16"/></svg>' +
     '<h2>Lembrete adicionado</h2><p class="muted">O aviso toca em <b>' + esc(fmtLong(reminderDate(l.date))) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p></div>';
 }
 function calStart(id) {
@@ -625,10 +626,17 @@ function calShowDone() {
   var l = find(c.id), p = $('#sheet-root .panel');
   if (!l || !p) { calPending = null; return; }
   l.calAt = todayISO(); save();
-  p.innerHTML = calDoneHtml(l, false);
+  p.innerHTML = calDoneHtml(l, 'wait');   // tela vazia enquanto o Calendário está aberto: a confirmação só aparece na volta
   c.armed = true;
   CAL_EVENTS.forEach(function (x) { x[1].addEventListener(x[0], calReturned, true); });
   CAL_TOUCH.forEach(function (n) { document.addEventListener(n, calReturned, true); });
+  c.last = Date.now(); c.focus = document.hasFocus ? document.hasFocus() : true;
+  c.timer = setInterval(function () {
+    var now = Date.now(), hf = document.hasFocus ? document.hasFocus() : true;
+    var back = (!c.focus && hf) || now - c.last > 1500;
+    c.last = now; c.focus = hf;
+    if (back) calReturned({ type: 'poll' });
+  }, 300);
 }
 function calReturned(e) {
   var c = calPending; if (!c || !c.armed) return;
@@ -636,11 +644,12 @@ function calReturned(e) {
   if (Date.now() - c.t < 1200) return;   // ainda é a abertura da tela do Calendário
   CAL_EVENTS.forEach(function (x) { x[1].removeEventListener(x[0], calReturned, true); });
   CAL_TOUCH.forEach(function (n) { document.removeEventListener(n, calReturned, true); });
+  clearInterval(c.timer);
   calPending = null;
   calSwallowUntil = Date.now() + 700;    // o toque que trouxe o app de volta não deve fechar a tela antes da animação
   var l = find(c.id), p = $('#sheet-root .panel');
   if (!l || !p) { render(); return; }
-  p.innerHTML = calDoneHtml(l, true);
+  p.innerHTML = calDoneHtml(l, 'play');
   setTimeout(function () { closeSheet(); render(); }, 1800);
 }
 
