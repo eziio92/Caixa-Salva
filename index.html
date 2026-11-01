@@ -440,8 +440,8 @@ function renderList() {
     var n = normName(fullName(l));
     return tokens.every(function (k) { return n.indexOf(k) >= 0; });
   });
-  // a busca só aparece quando a lista já é longa (ou enquanto há algo digitado)
-  $('#search').hidden = !(all.length > 7 || query);
+  // a busca fica visível assim que há algo para procurar (some só com a aba vazia e nada digitado)
+  $('#search').hidden = !(all.length || query);
   $('#search .clear').hidden = !query;
   loans.sort(act ? byReminder : function (a, b) { return (b.paidAt || '').localeCompare(a.paidAt || ''); });
   var el = $('#list');
