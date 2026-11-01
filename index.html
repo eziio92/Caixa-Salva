@@ -127,8 +127,8 @@ input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px
 .search .clear{position:absolute;right:1px;top:1px;width:44px;height:44px;border:0;background:transparent;color:var(--muted);font-size:16px}
 .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--danger);border-radius:999px;background:var(--danger-soft);color:var(--danger);font-weight:700;font-size:13px;padding:6px 14px;margin:0 0 10px;min-height:36px}
 #sub-seg{scroll-margin-top:76px}
-#suggest{margin:-2px 0 8px}
-#suggest:empty{display:none}
+#suggest,#suggest-ind{margin:-2px 0 8px}
+#suggest:empty,#suggest-ind:empty{display:none}
 .sug{border:1px solid var(--line)}
 .card details{margin-top:2px}
 .card summary{cursor:pointer;color:var(--accent-text);font-weight:600;font-size:14px;padding:10px 4px;min-height:44px}
@@ -304,7 +304,7 @@ function personOf(l) {
 // Dados para um novo empréstimo: identidade mais recente preenchida + valor do último empréstimo
 function prefillFor(p) {
   var pre = { nome: p.last.nome, sobrenome: p.last.sobrenome, valor: p.last.valor };
-  ['cpf', 'phone', 'endereco', 'profissao', 'salario'].forEach(function (k) {
+  ['cpf', 'phone', 'endereco', 'profissao', 'indicacao', 'salario'].forEach(function (k) {
     for (var i = 0; i < p.loans.length; i++) { if (p.loans[i][k]) { pre[k] = p.loans[i][k]; break; } }
   });
   return pre;
@@ -523,6 +523,8 @@ function openForm(id, pre) {
     '<label>Telefone<input name="phone" type="tel" inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000" data-mask="phone" value="' + esc(v.phone) + '"></label>' +
     '<label>Endereço<input name="endereco" autocomplete="off" autocapitalize="words" value="' + esc(v.endereco) + '"></label>' +
     '<label>Profissão<input name="profissao" autocomplete="off" autocapitalize="sentences" value="' + esc(v.profissao) + '"></label>' +
+    '<label>Indicado por<input name="indicacao" autocomplete="off" autocapitalize="words" placeholder="Buscar ou escrever um nome" value="' + esc(v.indicacao) + '"></label>' +
+    '<div id="suggest-ind"></div>' +
     '<label>Salário mensal (R$)<input name="salario" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-cents="' + (v.salario || 0) + '" value="' + (v.salario ? num(v.salario) : '') + '"></label>' +
     '<div class="loan-box">' +
       '<label>Valor emprestado (R$)<input name="valor" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-cents="' + (v.valor || 0) + '" value="' + (v.valor ? num(v.valor) : '') + '"></label>' +
@@ -565,10 +567,43 @@ function pickPerson(key) {
   el.nome.value = pre.nome || ''; el.sobrenome.value = pre.sobrenome || '';
   el.cpf.value = pre.cpf || ''; el.phone.value = pre.phone || '';
   el.endereco.value = pre.endereco || ''; el.profissao.value = pre.profissao || '';
+  el.indicacao.value = pre.indicacao || '';
   setMoney(el.salario, pre.salario); setMoney(el.valor, pre.valor);
-  $('#suggest').innerHTML = '';
+  $('#suggest').innerHTML = ''; $('#suggest-ind').innerHTML = '';
   var note = $('#prefill-note'); if (note) note.hidden = false;
   updatePreview();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+
+// "Indicado por": propõe clientes já cadastrados e nomes já usados como indicação, pelas primeiras letras de
+// qualquer palavra do nome. Um nome novo é livre: se nada combina, fica como foi digitado.
+function renderSuggestInd() {
+  var f = $('#loan-form'), box = $('#suggest-ind'); if (!f || !box) return;
+  var q = normName(f.elements.indicacao.value);
+  if (!q) { box.innerHTML = ''; return; }
+  var self = normName(f.elements.nome.value + ' ' + f.elements.sobrenome.value);   // ninguém indica a si mesmo
+  var seen = {}, names = [];
+  function add(name) { var k = normName(name); if (!k || seen[k]) return; seen[k] = true; names.push(name); }
+  peopleList().forEach(function (p) { add(fullName(p.last)); });
+  db.loans.forEach(function (l) { add(l.indicacao); });
+  var tokens = q.split(' ');
+  var found = names.filter(function (n) {
+    var k = normName(n);
+    return k !== q && k !== self && tokens.every(function (t) { return (' ' + k).indexOf(' ' + t) >= 0; });
+  }).sort(function (a, b) { var x = normName(a), y = normName(b); return x < y ? -1 : x > y ? 1 : 0; }).slice(0, 5);
+  if (found.length) {
+    box.innerHTML = found.map(function (n) {
+      return '<button type="button" class="row-btn sug" data-act="pick-ind" data-name="' + esc(n) + '"><span>' + esc(n) + '</span></button>';
+    }).join('');
+  } else if (q.length >= 2 && !names.some(function (n) { return normName(n) === q; })) {
+    box.innerHTML = '<p class="help" style="margin:0">Nome novo: será salvo como você digitou.</p>';
+  } else box.innerHTML = '';
+}
+
+function pickIndicacao(name) {
+  var f = $('#loan-form'); if (!f) return;
+  f.elements.indicacao.value = name;
+  $('#suggest-ind').innerHTML = '';
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 
@@ -589,7 +624,7 @@ function submitForm(f) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Informe a data do empréstimo.', el.date);
   var data = {
     nome: nome, sobrenome: el.sobrenome.value.trim(), cpf: el.cpf.value.trim(), phone: el.phone.value.trim(),
-    endereco: el.endereco.value.trim(), profissao: el.profissao.value.trim(), salario: centsOf(el.salario),
+    endereco: el.endereco.value.trim(), profissao: el.profissao.value.trim(), indicacao: el.indicacao.value.trim(), salario: centsOf(el.salario),
     valor: valor, date: date
   };
   var editId = f.dataset.id, loan;
@@ -647,7 +682,7 @@ function openDetail(id) {
     ['Emprestado em', fmtFull(l.date)],
     paid ? ['Quitado em', l.paidAt ? fmtFull(l.paidAt) : ''] : ['Lembrete em', fmtFull(r)],
     paid ? ['', ''] : ['Vencimento', fmtFull(dueDate(l.date))],
-    ['Telefone', l.phone], ['CPF', l.cpf], ['Endereço', l.endereco], ['Profissão', l.profissao],
+    ['Telefone', l.phone], ['CPF', l.cpf], ['Endereço', l.endereco], ['Profissão', l.profissao], ['Indicado por', l.indicacao],
     ['Salário mensal', l.salario ? brl(l.salario) : ''],
     ['Calendário', !paid && l.calAt ? 'Lembrete adicionado em ' + fmtFull(l.calAt) : '']
   ];
@@ -875,6 +910,7 @@ document.addEventListener('click', function (e) {
     case 'new': openForm(); break;
     case 'new-for': var src = find(id); if (src) openForm(null, prefillFor(personOf(src))); break;
     case 'pick': pickPerson(el.dataset.key); break;
+    case 'pick-ind': pickIndicacao(el.dataset.name); break;
     case 'detail': openDetail(id); break;
     case 'edit': openForm(id); break;
     case 'view': view = el.dataset.v; render(); break;
@@ -918,6 +954,7 @@ document.addEventListener('input', function (e) {
   if (t.closest && t.closest('#loan-form')) {
     updatePreview(); var er = $('#form-err'); if (er) er.textContent = '';
     if (t.name === 'nome' || t.name === 'sobrenome') renderSuggest();
+    if (t.name === 'indicacao') renderSuggestInd();
   }
 });
 
