@@ -1,7 +1,7 @@
 // Service worker: abre o app sem internet e entrega o lembrete como arquivo de calendário (.ics).
 // Estratégia: tenta a rede primeiro (para receber atualizações) e usa o cache se estiver offline.
 // Ao publicar uma nova versão do app, basta mudar o número abaixo.
-const CACHE = 'caixa-salva-v2';
+const CACHE = 'caixa-salva-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

@@ -117,6 +117,22 @@ input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px
 .done p{margin:4px 0}
 .help{font-size:13px;color:var(--muted);margin:6px 0 14px}
 
+/* alerta compacto, busca, filtro e histórico da pessoa */
+.alert-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.alert-head span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+.more-btn{display:block;width:100%;border:0;background:transparent;color:var(--danger);font-weight:700;font-size:15px;padding:8px 12px 12px;min-height:44px}
+.search{position:relative;margin:0 0 12px}
+.search input{margin-top:0;padding-right:44px}
+.search input[type="search"]::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.search .clear{position:absolute;right:1px;top:1px;width:44px;height:44px;border:0;background:transparent;color:var(--muted);font-size:16px}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--danger);border-radius:999px;background:var(--danger-soft);color:var(--danger);font-weight:700;font-size:13px;padding:6px 14px;margin:0 0 10px;min-height:36px}
+#sub-seg{scroll-margin-top:76px}
+#suggest{margin:-2px 0 8px}
+#suggest:empty{display:none}
+.sug{border:1px solid var(--line)}
+.card details{margin-top:2px}
+.card summary{cursor:pointer;color:var(--accent-text);font-weight:600;font-size:14px;padding:10px 4px;min-height:44px}
+
 /* confirmation dialog (replaces native confirm/alert) */
 .dlg-back{position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;padding:20px;z-index:40;animation:fade .15s}
 .dlg{background:var(--surface);color:var(--ink);border-radius:18px;padding:20px;width:100%;max-width:360px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
@@ -165,6 +181,10 @@ input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px
       <button data-act="filter" data-f="active">Em aberto</button>
       <button data-act="filter" data-f="paid">Quitados</button>
     </div>
+    <div class="search" id="search" hidden>
+      <input id="q" type="search" placeholder="Buscar por nome" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Buscar por nome">
+      <button class="clear" data-act="q-clear" aria-label="Limpar busca" hidden>✕</button>
+    </div>
     <div id="list"></div>
   </section>
 
@@ -186,6 +206,7 @@ var STORE_KEY = 'emprestimos.v1';
 var RATE = 30; // juros fixos de 30 % por mês
 var db = { version: 1, loans: [], settings: { reminderHour: 9, lastBackup: null } };
 var view = 'list', filter = 'active';
+var query = '', lateOnly = false;   // busca por nome e filtro "só atrasados"
 var calM = null, calSel = null;
 var PREVIEW = false; // a versão de pré-visualização dentro do Claude troca isto para true
 
@@ -239,6 +260,72 @@ function fullName(l) { return ((l.nome || '') + ' ' + (l.sobrenome || '')).trim(
 function byReminder(a, b) {
   var x = reminderDate(a.date), y = reminderDate(b.date);
   return x < y ? -1 : x > y ? 1 : 0;
+}
+function byDateDesc(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  return (b.createdAt || 0) - (a.createdAt || 0);
+}
+
+/* ---------- Pessoas (deduzidas dos empréstimos, nada é guardado a mais) ---------- */
+// Chave da pessoa: CPF completo; sem CPF, nome + sobrenome sem acento nem maiúsculas.
+// Um empréstimo antigo sem CPF é ligado ao CPF da pessoa de mesmo nome, se esse nome tem um único CPF.
+function normName(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function cpfDigits(s) { var d = String(s || '').replace(/\D/g, ''); return d.length === 11 ? d : ''; }
+function personKeyer() {
+  var nameCpf = {};
+  db.loans.forEach(function (l) {
+    var c = cpfDigits(l.cpf); if (!c) return;
+    var n = normName(fullName(l));
+    nameCpf[n] = (nameCpf[n] === undefined || nameCpf[n] === c) ? c : '';
+  });
+  return function (l) {
+    var c = cpfDigits(l.cpf);
+    if (c) return 'cpf:' + c;
+    var n = normName(fullName(l));
+    return nameCpf[n] ? 'cpf:' + nameCpf[n] : 'nome:' + n;
+  };
+}
+function peopleList() {
+  var keyOf = personKeyer(), map = {}, list = [];
+  db.loans.forEach(function (l) {
+    var k = keyOf(l), p = map[k];
+    if (!p) { p = map[k] = { key: k, loans: [] }; list.push(p); }
+    p.loans.push(l);
+  });
+  list.forEach(function (p) { p.loans.sort(byDateDesc); p.last = p.loans[0]; });
+  return list;
+}
+function personOf(l) {
+  var k = personKeyer()(l);
+  return peopleList().filter(function (p) { return p.key === k; })[0];
+}
+// Dados para um novo empréstimo: identidade mais recente preenchida + valor do último empréstimo
+function prefillFor(p) {
+  var pre = { nome: p.last.nome, sobrenome: p.last.sobrenome, valor: p.last.valor };
+  ['cpf', 'phone', 'endereco', 'profissao', 'salario'].forEach(function (k) {
+    for (var i = 0; i < p.loans.length; i++) { if (p.loans[i][k]) { pre[k] = p.loans[i][k]; break; } }
+  });
+  return pre;
+}
+// Pessoas com algum empréstimo vencido (lembrete de hoje ou antes), a mais antiga primeiro
+function lateGroups(t) {
+  var keyOf = personKeyer(), map = {}, list = [];
+  db.loans.forEach(function (l) {
+    if (l.status === 'paid' || reminderDate(l.date) > t) return;
+    var k = keyOf(l), g = map[k];
+    if (!g) { g = map[k] = { key: k, loans: [], total: 0 }; list.push(g); }
+    g.loans.push(l); g.total += loanTotal(l);
+  });
+  list.forEach(function (g) { g.loans.sort(byReminder); });
+  list.sort(function (a, b) { return byReminder(a.loans[0], b.loans[0]); });
+  return list;
+}
+function loanRow(l) {
+  var paid = l.status === 'paid';
+  var sub = paid ? (l.paidAt ? 'quitado em ' + fmtFull(l.paidAt) : 'quitado') : 'em aberto · lembrete ' + fmtShort(reminderDate(l.date));
+  return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + fmtFull(l.date) + ' · ' + brl(l.valor) + '<small>' + sub + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
 }
 
 /* ---------- Armazenamento local ---------- */
@@ -320,14 +407,20 @@ function needsBackup() {
 
 function renderBanners() {
   var t = todayISO(), h = PREVIEW ? '<p class="note" style="margin:0 4px 12px">Pré-visualização dentro do Claude: os dados ficam só neste navegador e já vêm com exemplos. O Calendário e o backup só funcionam no app instalado no iPhone.</p>' : '';
-  var due = db.loans.filter(function (l) { return l.status !== 'paid' && reminderDate(l.date) <= t; }).sort(byReminder);
-  if (due.length) {
-    h += '<div class="card alert"><p class="alert-title">' + (due.length === 1 ? '1 pessoa para cobrar' : due.length + ' pessoas para cobrar') + '</p>';
-    h += due.map(function (l) {
-      var d = diffDays(reminderDate(l.date), t);
+  // Uma linha por pessoa (não por empréstimo). O alerta tem altura limitada: com mais de 4 pessoas,
+  // mostra as 3 mais antigas e um botão que abre a lista filtrada só com os atrasados.
+  var groups = lateGroups(t), n = groups.length;
+  if (n) {
+    var cap = n > 4 ? 3 : n, sum = 0;
+    groups.forEach(function (g) { sum += g.total; });
+    h += '<div class="card alert"><p class="alert-title alert-head"><span>' + (n === 1 ? '1 pessoa para cobrar' : n + ' pessoas para cobrar') + '</span>' + (n > 1 ? '<span>' + brl(sum) + '</span>' : '') + '</p>';
+    h += groups.slice(0, cap).map(function (g) {
+      var l = g.loans[0], d = diffDays(reminderDate(l.date), t);
       var when = d === 0 ? 'lembrete de hoje' : 'lembrete há ' + d + (d === 1 ? ' dia' : ' dias');
-      return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>' + when + ' · vence ' + fmtShort(dueDate(l.date)) + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
+      var sub = g.loans.length > 1 ? g.loans.length + ' empréstimos · ' + (d === 0 ? 'hoje' : 'há ' + d + (d === 1 ? ' dia' : ' dias')) : when + ' · vence ' + fmtShort(dueDate(l.date));
+      return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>' + sub + '</small></span><b>' + brl(g.total) + '</b></button>';
     }).join('');
+    if (n > cap) h += '<button class="more-btn" data-act="late-all">+ ' + (n - cap) + ' outros · ver todos</button>';
     h += '</div>';
   }
   if (needsBackup()) {
@@ -337,17 +430,31 @@ function renderBanners() {
 }
 
 function renderList() {
-  var act = filter === 'active';
-  var loans = db.loans.filter(function (l) { return act ? l.status !== 'paid' : l.status === 'paid'; });
+  var act = filter === 'active', t = todayISO();
+  var all = db.loans.filter(function (l) { return act ? l.status !== 'paid' : l.status === 'paid'; });
+  function isLate(l) { return reminderDate(l.date) <= t; }
+  if (lateOnly && !(act && all.some(isLate))) lateOnly = false;   // nada mais atrasado: sai do filtro
+  var loans = (act && lateOnly) ? all.filter(isLate) : all;
+  var tokens = normName(query) ? normName(query).split(' ') : [];
+  if (tokens.length) loans = loans.filter(function (l) {
+    var n = normName(fullName(l));
+    return tokens.every(function (k) { return n.indexOf(k) >= 0; });
+  });
+  // a busca só aparece quando a lista já é longa (ou enquanto há algo digitado)
+  $('#search').hidden = !(all.length > 7 || query);
+  $('#search .clear').hidden = !query;
   loans.sort(act ? byReminder : function (a, b) { return (b.paidAt || '').localeCompare(a.paidAt || ''); });
   var el = $('#list');
+  var pill = (act && lateOnly) ? '<button class="pill" data-act="late-off">Só atrasados ✕</button>' : '';
   if (!loans.length) {
-    el.innerHTML = '<div class="empty">' + (act
-      ? 'Nenhum empréstimo em aberto.<br>Toque em <b>Novo empréstimo</b> para começar.'
-      : 'Nenhum empréstimo quitado ainda.') + '</div>';
+    el.innerHTML = pill + '<div class="empty">' + (tokens.length
+      ? 'Nenhum resultado para “' + esc(query.trim()) + '”.'
+      : act
+        ? 'Nenhum empréstimo em aberto.<br>Toque em <b>Novo empréstimo</b> para começar.'
+        : 'Nenhum empréstimo quitado ainda.') + '</div>';
     return;
   }
-  var t = todayISO(), sumP = 0, sumT = 0;
+  var sumP = 0, sumT = 0;
   var rows = loans.map(function (l) {
     var tot = loanTotal(l); sumP += l.valor; sumT += tot;
     var cell, cls = '';
@@ -355,7 +462,7 @@ function renderList() {
     else cell = l.paidAt ? fmtShort(l.paidAt) : '—';
     return '<tr data-act="detail" data-id="' + l.id + '"><td class="name">' + esc(fullName(l)) + '</td><td>' + num(l.valor) + '</td><td>' + num(tot) + '</td><td class="' + cls + '">' + cell + '</td></tr>';
   }).join('');
-  el.innerHTML = '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Com ' + RATE + '%</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
+  el.innerHTML = pill + '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Com ' + RATE + '%</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
     '</tbody><tfoot><tr><td>Total · ' + loans.length + '</td><td>' + num(sumP) + '</td><td>' + num(sumT) + '</td><td></td></tr></tfoot></table></div>' +
     '<p class="note">Valores em reais (R$). Toque em uma linha para ver os detalhes.</p>';
 }
@@ -401,15 +508,17 @@ function moveMonth(delta) {
 }
 
 /* ---------- Formulário ---------- */
-function openForm(id) {
-  var l = id ? find(id) : null, v = l || {};
+function openForm(id, pre) {
+  var l = id ? find(id) : null, v = l || pre || {};
   var html =
     '<form id="loan-form" novalidate data-id="' + (l ? l.id : '') + '" data-taxa="' + (l && l.taxa != null ? l.taxa : RATE) + '">' +
     '<div class="sheet-head"><h2>' + (l ? 'Editar empréstimo' : 'Novo empréstimo') + '</h2><button type="button" class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' +
+    (l ? '' : '<p class="help" id="prefill-note"' + (pre ? '' : ' hidden') + '>Dados preenchidos a partir do último empréstimo. Confira o valor e a data.</p>') +
     '<div class="grid2">' +
       '<label>Nome<input name="nome" autocomplete="off" autocapitalize="words" value="' + esc(v.nome) + '"></label>' +
       '<label>Sobrenome<input name="sobrenome" autocomplete="off" autocapitalize="words" value="' + esc(v.sobrenome) + '"></label>' +
     '</div>' +
+    (l ? '' : '<div id="suggest"></div>') +
     '<label>CPF<input name="cpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" data-mask="cpf" value="' + esc(v.cpf) + '"></label>' +
     '<label>Telefone<input name="phone" type="tel" inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000" data-mask="phone" value="' + esc(v.phone) + '"></label>' +
     '<label>Endereço<input name="endereco" autocomplete="off" autocapitalize="words" value="' + esc(v.endereco) + '"></label>' +
@@ -429,6 +538,39 @@ function openForm(id) {
 }
 
 function centsOf(inp) { return parseInt(inp.dataset.cents || '0', 10) || 0; }
+function setMoney(inp, c) { inp.dataset.cents = c || 0; inp.value = c ? num(c) : ''; }
+
+// Sugestões de pessoas já conhecidas (inclui quem tem tudo quitado) enquanto digita o nome
+function renderSuggest() {
+  var f = $('#loan-form'), box = $('#suggest'); if (!f || !box) return;
+  var q = normName(f.elements.nome.value + ' ' + f.elements.sobrenome.value);
+  if (q.length < 2) { box.innerHTML = ''; return; }
+  var tokens = q.split(' ');
+  var found = peopleList().filter(function (p) {
+    var n = normName(fullName(p.last));
+    return tokens.every(function (k) { return n.indexOf(k) >= 0; });
+  }).sort(function (a, b) { return byDateDesc(a.last, b.last); }).slice(0, 5);
+  box.innerHTML = (found.length ? '<p class="help" style="margin:0 0 6px">Já cadastrado? Toque para preencher os dados:</p>' : '') + found.map(function (p) {
+    var open = p.loans.filter(function (x) { return x.status !== 'paid'; }).length;
+    var sub = open ? (open === 1 ? '1 em aberto' : open + ' em aberto') : 'tudo quitado';
+    return '<button type="button" class="row-btn sug" data-act="pick" data-key="' + esc(p.key) + '"><span>' + esc(fullName(p.last)) +
+      '<small>' + sub + ' · último ' + brl(p.last.valor) + ' em ' + fmtShort(p.last.date) + '</small></span></button>';
+  }).join('');
+}
+
+function pickPerson(key) {
+  var f = $('#loan-form'); if (!f) return;
+  var p = peopleList().filter(function (x) { return x.key === key; })[0]; if (!p) return;
+  var pre = prefillFor(p), el = f.elements;
+  el.nome.value = pre.nome || ''; el.sobrenome.value = pre.sobrenome || '';
+  el.cpf.value = pre.cpf || ''; el.phone.value = pre.phone || '';
+  el.endereco.value = pre.endereco || ''; el.profissao.value = pre.profissao || '';
+  setMoney(el.salario, pre.salario); setMoney(el.valor, pre.valor);
+  $('#suggest').innerHTML = '';
+  var note = $('#prefill-note'); if (note) note.hidden = false;
+  updatePreview();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
 
 function updatePreview() {
   var f = $('#loan-form'); if (!f) return;
@@ -517,8 +659,15 @@ function openDetail(id) {
   } else {
     btns += '<button class="btn" data-act="reopen" data-id="' + id + '">Reabrir empréstimo</button>';
   }
+  btns += '<button class="btn' + (paid ? ' primary' : '') + '" data-act="new-for" data-id="' + id + '">Novo empréstimo para ' + esc(l.nome) + '</button>';
   btns += '<div class="grid2"><button class="btn" data-act="edit" data-id="' + id + '">Editar</button><button class="btn danger" data-act="delete" data-id="' + id + '">Excluir</button></div>';
-  openSheet('<div class="sheet-head"><h2>' + esc(fullName(l)) + chip + '</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' + kv(rows) + '<div class="stack">' + btns + '</div>');
+  // histórico: os outros empréstimos da mesma pessoa (os 5 mais recentes à vista, o resto recolhido)
+  var oth = personOf(l).loans.filter(function (x) { return x.id !== l.id; }), othHtml = '';
+  if (oth.length) {
+    othHtml = '<div class="card pad"><h3>Outros empréstimos de ' + esc(l.nome) + ' (' + oth.length + ')</h3>' + oth.slice(0, 5).map(loanRow).join('') +
+      (oth.length > 5 ? '<details><summary>Ver os ' + (oth.length - 5) + ' mais antigos</summary>' + oth.slice(5).map(loanRow).join('') + '</details>' : '') + '</div>';
+  }
+  openSheet('<div class="sheet-head"><h2>' + esc(fullName(l)) + chip + '</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' + kv(rows) + othHtml + '<div class="stack">' + btns + '</div>');
 }
 
 function openSaved(id) {
@@ -719,10 +868,18 @@ document.addEventListener('click', function (e) {
     case 'noop': return;
     case 'close': closeSheet(); break;
     case 'new': openForm(); break;
+    case 'new-for': var src = find(id); if (src) openForm(null, prefillFor(personOf(src))); break;
+    case 'pick': pickPerson(el.dataset.key); break;
     case 'detail': openDetail(id); break;
     case 'edit': openForm(id); break;
     case 'view': view = el.dataset.v; render(); break;
-    case 'filter': filter = el.dataset.f; render(); break;
+    case 'filter': filter = el.dataset.f; lateOnly = false; render(); break;
+    case 'late-all':
+      view = 'list'; filter = 'active'; lateOnly = true; query = ''; $('#q').value = ''; render();
+      var sub = $('#sub-seg'); if (sub && sub.scrollIntoView) sub.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      break;
+    case 'late-off': lateOnly = false; render(); break;
+    case 'q-clear': query = ''; $('#q').value = ''; renderList(); $('#q').focus(); break;
     case 'pay': payLoan(id); break;
     case 'reopen': var l = find(id); if (l) { l.status = 'active'; l.paidAt = null; save(); closeSheet(); render(); toast('Empréstimo reaberto'); } break;
     case 'delete':
@@ -747,12 +904,16 @@ document.addEventListener('submit', function (e) {
 
 document.addEventListener('input', function (e) {
   var t = e.target, m = t.dataset && t.dataset.mask;
+  if (t.id === 'q') { query = t.value; renderList(); return; }
   if (m === 'money') {
     var d = t.value.replace(/\D/g, '').slice(0, 12), c = d ? parseInt(d, 10) : 0;
     t.dataset.cents = c; t.value = d ? num(c) : '';
   } else if (m === 'cpf') t.value = maskCPF(t.value);
   else if (m === 'phone') t.value = maskPhone(t.value);
-  if (t.closest && t.closest('#loan-form')) { updatePreview(); var er = $('#form-err'); if (er) er.textContent = ''; }
+  if (t.closest && t.closest('#loan-form')) {
+    updatePreview(); var er = $('#form-err'); if (er) er.textContent = '';
+    if (t.name === 'nome' || t.name === 'sobrenome') renderSuggest();
+  }
 });
 
 document.addEventListener('change', function (e) {
