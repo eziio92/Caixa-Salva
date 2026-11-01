@@ -157,6 +157,12 @@ input:focus,select:focus{outline:2px solid var(--accent-text);outline-offset:1px
 .dot.ph{visibility:hidden}
 .cell.sel .dot{background:var(--accent-ink);color:var(--accent)}
 .month-sum{font-size:13px;color:var(--muted);margin:0 2px 12px}
+.sumrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.card h3 + .sumrow{border-top:0}
+.sumrow small{display:block;color:var(--muted);font-size:12px;font-weight:500}
+.sumrow b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sumrow.big{font-weight:700}
+.sumrow.big b{font-size:20px}
 
 #toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.2s;z-index:30;font-size:14px;max-width:90vw;text-align:center}
 #toast.show{opacity:1;transform:translate(-50%,0)}
@@ -256,6 +262,7 @@ function fmtLong(s) {
 function brl(c) { return (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function num(c) { return (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function loanTotal(l) { return Math.round(l.valor * (100 + (l.taxa == null ? RATE : l.taxa)) / 100); }
+function loanInterest(l) { return loanTotal(l) - l.valor; }   // os 30 %: o que o empréstimo rende
 function fullName(l) { return ((l.nome || '') + ' ' + (l.sobrenome || '')).trim(); }
 function byReminder(a, b) {
   var x = reminderDate(a.date), y = reminderDate(b.date);
@@ -454,16 +461,16 @@ function renderList() {
         : 'Nenhum empréstimo quitado ainda.') + '</div>';
     return;
   }
-  var sumP = 0, sumT = 0;
+  var sumP = 0, sumJ = 0;
   var rows = loans.map(function (l) {
-    var tot = loanTotal(l); sumP += l.valor; sumT += tot;
+    var jur = loanInterest(l); sumP += l.valor; sumJ += jur;
     var cell, cls = '';
     if (act) { var r = reminderDate(l.date); cell = fmtShort(r); cls = r < t ? 'late' : (r === t ? 'today' : ''); }
     else cell = l.paidAt ? fmtShort(l.paidAt) : '—';
-    return '<tr data-act="detail" data-id="' + l.id + '"><td class="name">' + esc(fullName(l)) + '</td><td>' + num(l.valor) + '</td><td>' + num(tot) + '</td><td class="' + cls + '">' + cell + '</td></tr>';
+    return '<tr data-act="detail" data-id="' + l.id + '"><td class="name">' + esc(fullName(l)) + '</td><td>' + num(l.valor) + '</td><td>' + num(jur) + '</td><td class="' + cls + '">' + cell + '</td></tr>';
   }).join('');
-  el.innerHTML = pill + '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Com ' + RATE + '%</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
-    '</tbody><tfoot><tr><td>Total · ' + loans.length + '</td><td>' + num(sumP) + '</td><td>' + num(sumT) + '</td><td></td></tr></tfoot></table></div>' +
+  el.innerHTML = pill + '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Juros ' + RATE + '%</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
+    '</tbody><tfoot><tr><td>Total · ' + loans.length + '</td><td>' + num(sumP) + '</td><td>' + num(sumJ) + '</td><td></td></tr></tfoot></table></div>' +
     '<p class="note">Valores em reais (R$). Toque em uma linha para ver os detalhes.</p>';
 }
 
@@ -482,8 +489,12 @@ function renderCal() {
     cells += '<button class="cell' + (k === t ? ' today' : '') + (k === calSel ? ' sel' : '') + '" data-act="cal-day" data-d="' + k + '"><span>' + d + '</span>' +
       (n ? '<i class="dot ' + tone + '">' + n + '</i>' : '<i class="dot ph">0</i>') + '</button>';
   }
-  var prefix = y + '-' + pad(m) + '-', cnt = 0, sum = 0;
-  Object.keys(map).forEach(function (k) { if (k.indexOf(prefix) === 0) map[k].forEach(function (l) { cnt++; sum += loanTotal(l); }); });
+  var prefix = y + '-' + pad(m) + '-', cnt = 0, sum = 0, pend = 0;
+  Object.keys(map).forEach(function (k) { if (k.indexOf(prefix) === 0) map[k].forEach(function (l) { cnt++; sum += loanTotal(l); pend += loanInterest(l); }); });
+  // juros do mês: já recebidos (empréstimos quitados dentro do mês) + ainda a receber (lembretes do mês)
+  var gotN = 0, got = 0;
+  db.loans.forEach(function (l) { if (l.status === 'paid' && l.paidAt && l.paidAt.indexOf(prefix) === 0) { gotN++; got += loanInterest(l); } });
+  var monthName = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
   var title = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   var dayLoans = map[calSel] || [];
   var dow = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(function (x) { return '<span class="dow">' + x + '</span>'; }).join('');
@@ -494,7 +505,11 @@ function renderCal() {
     '<div class="card pad"><h3>' + esc(fmtLong(calSel)) + '</h3>' +
     (dayLoans.length ? dayLoans.map(function (l) {
       return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>emprestado ' + brl(l.valor) + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
-    }).join('') : '<p class="muted" style="margin:0">Nenhum lembrete neste dia.</p>') + '</div>';
+    }).join('') : '<p class="muted" style="margin:0">Nenhum lembrete neste dia.</p>') + '</div>' +
+    '<div class="card pad"><h3>Juros de ' + esc(monthName) + '</h3>' +
+    '<div class="sumrow big"><span>Total do mês<small>juros de ' + RATE + '%</small></span><b>' + brl(got + pend) + '</b></div>' +
+    '<div class="sumrow"><span>Já recebidos<small>' + (gotN ? gotN + (gotN === 1 ? ' empréstimo quitado' : ' empréstimos quitados') : 'nenhum quitado') + '</small></span><b>' + brl(got) + '</b></div>' +
+    '<div class="sumrow"><span>A receber<small>' + (cnt ? cnt + (cnt === 1 ? ' lembrete' : ' lembretes') : 'nenhum lembrete') + '</small></span><b>' + brl(pend) + '</b></div></div>';
 }
 
 function moveMonth(delta) {
