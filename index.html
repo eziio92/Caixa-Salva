@@ -585,6 +585,37 @@ async function addToCalendar(id, alt) {
   setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
 }
 
+/* ---------- Teste dos métodos de abrir o Calendário ---------- */
+function icsToB64(text) {
+  var bytes = new TextEncoder().encode(text), bin = '';
+  bytes.forEach(function (b) { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function icsUrl(text) { return 'lembrete.ics?c=' + icsToB64(text); } // o service worker devolve isto como arquivo .ics
+
+function openCalTest() {
+  var fake = { id: 'teste-calendario', nome: 'TESTE Caixa Salva', sobrenome: '(pode apagar)', valor: 10000, taxa: 30, date: todayISO(), phone: '' };
+  var text = makeICS(fake);
+  var blobUrl = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }));
+  var dataUrl = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(text);
+  var swUrl = icsUrl(text);
+  openSheet(
+    '<div class="sheet-head"><h2>Testar Calendário</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' +
+    '<p class="help" style="margin-top:0">Toque em cada método. O que funciona abre uma tela do iPhone com o evento e um botão para adicionar ao Calendário. É um evento de teste, pode apagar depois.</p>' +
+    '<p class="help" id="sw-status">Verificando o arquivo de lembrete…</p>' +
+    '<div class="stack">' +
+    '<a class="btn" target="_blank" rel="noopener" href="' + esc(blobUrl) + '">Método 1 · arquivo temporário</a>' +
+    '<a class="btn" target="_blank" rel="noopener" href="' + esc(dataUrl) + '">Método 2 · dados no link</a>' +
+    '<a class="btn" href="' + esc(swUrl) + '">Método 3 · endereço do app, mesma tela</a>' +
+    '<a class="btn" target="_blank" rel="noopener" href="' + esc(swUrl) + '">Método 4 · endereço do app, nova tela</a>' +
+    '<a class="btn" download="lembrete.ics" href="' + esc(swUrl) + '">Método 5 · baixar o arquivo</a>' +
+    '</div>');
+  fetch(swUrl, { cache: 'no-store' }).then(function (r) { return r.headers.get('content-type') || ''; }).then(function (ct) {
+    var el = $('#sw-status'); if (!el) return;
+    el.textContent = /text\/calendar/.test(ct) ? 'Métodos 3, 4 e 5: prontos.' : 'Métodos 3, 4 e 5 ainda não estão prontos: feche o app, abra de novo e volte aqui.';
+  }).catch(function () { var el = $('#sw-status'); if (el) el.textContent = 'Não foi possível verificar os métodos 3, 4 e 5.'; });
+}
+
 /* ---------- Ajustes e backup ---------- */
 function openSettings() {
   var hours = '';
@@ -597,7 +628,10 @@ function openSettings() {
     '<div class="card pad"><h3 style="text-transform:none">Backup</h3>' +
     '<p class="help" style="margin-top:0">Os dados ficam somente neste aparelho. Último backup: <b>' + last + '</b>. O arquivo contém dados pessoais dos clientes: guarde-o em um lugar seguro (por exemplo, no app Arquivos).</p>' +
     '<div class="stack"><button class="btn primary" data-act="backup">Fazer backup</button>' +
-    '<label class="btn" style="margin:0">Restaurar backup<input id="import-file" type="file" accept=".json,application/json" hidden></label></div></div>');
+    '<label class="btn" style="margin:0">Restaurar backup<input id="import-file" type="file" accept=".json,application/json" hidden></label></div></div>' +
+    '<div class="card pad"><h3 style="text-transform:none">Calendário</h3>' +
+    '<p class="help" style="margin-top:0">Se o lembrete não abre o Calendário, teste outras formas.</p>' +
+    '<button class="btn" data-act="cal-test">Testar métodos do Calendário</button></div>');
 }
 
 async function doBackup() {
@@ -670,6 +704,7 @@ document.addEventListener('click', function (e) {
     case 'cal-day': calSel = el.dataset.d; renderCal(); break;
     case 'settings': openSettings(); break;
     case 'backup': doBackup(); break;
+    case 'cal-test': openCalTest(); break;
   }
 });
 
