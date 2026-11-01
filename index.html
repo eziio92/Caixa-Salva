@@ -609,8 +609,13 @@ function maskCPF(v) {
   if (d.length > 9) o += '-' + d.slice(9, 11);
   return o;
 }
-function maskPhone(v) {
-  var d = v.replace(/\D/g, '').slice(0, 11);
+function maskPhone(v, pasted) {
+  var d = v.replace(/\D/g, '');
+  // Número colado do WhatsApp vem com o código do país (+55 11 91234-5678): tira o 55 antes da máscara.
+  // 13 dígitos ou mais só podem vir de uma colagem. Com 12 (fixo com +55) só tira se veio colado ou com "+",
+  // para não confundir com quem digita um 12º dígito num número de DDD 55.
+  if (d.slice(0, 2) === '55' && (d.length > 12 || (d.length === 12 && (pasted || /^\D*\+/.test(v))))) d = d.slice(2);
+  d = d.slice(0, 11);
   if (!d) return '';
   if (d.length <= 2) return '(' + d;
   var split = d.length > 10 ? 7 : 6;
@@ -909,7 +914,7 @@ document.addEventListener('input', function (e) {
     var d = t.value.replace(/\D/g, '').slice(0, 12), c = d ? parseInt(d, 10) : 0;
     t.dataset.cents = c; t.value = d ? num(c) : '';
   } else if (m === 'cpf') t.value = maskCPF(t.value);
-  else if (m === 'phone') t.value = maskPhone(t.value);
+  else if (m === 'phone') t.value = maskPhone(t.value, e.inputType === 'insertFromPaste');
   if (t.closest && t.closest('#loan-form')) {
     updatePreview(); var er = $('#form-err'); if (er) er.textContent = '';
     if (t.name === 'nome' || t.name === 'sobrenome') renderSuggest();
