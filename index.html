@@ -978,7 +978,7 @@ var aiBusy = false;
 var AI_SYSTEM =
   'Você lê documentos brasileiros de um cliente que pede um empréstimo: documento de identidade (RG, CNH ou CIN), comprovante de renda ' +
   '(holerite, contracheque, extrato de benefício) e comprovante de residência (conta de luz, água, telefone ou similar). ' +
-  'Chame a ferramenta preencher_cadastro uma única vez, com um item em "documentos" para cada arquivo, na ordem recebida. ' +
+  'Responda somente chamando a ferramenta preencher_cadastro, uma única vez, sem escrever texto, com um item em "documentos" para cada arquivo, na ordem recebida. ' +
   'Regras: copie exatamente o que está impresso; nunca invente nem complete dado ilegível ou ausente (use null); ' +
   'o CPF só com os 11 dígitos; o endereço em uma linha (rua, número, complemento, bairro, cidade - UF, CEP); ' +
   'a profissão é o cargo ou a função do comprovante de renda (ou "Aposentado"/"Pensionista"); ' +
@@ -1129,8 +1129,8 @@ async function aiBlocks(files) {
   blocks.push({ type: 'text', text: 'Leia os documentos acima e chame a ferramenta preencher_cadastro.' });
   return blocks;
 }
-async function aiCall(blocks) {
-  var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 90000), resp;
+async function aiPost(messages) {
+  var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 120000), resp;
   try {
     resp = await fetch(AI_URL, {
       method: 'POST', signal: ctl.signal,
@@ -1138,9 +1138,10 @@ async function aiCall(blocks) {
         'content-type': 'application/json', 'x-api-key': aiKey(), 'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
+      // Este modelo recusa tool_choice "tool"/"any" (erro 400): usa "auto" e o texto pede a ferramenta.
       body: JSON.stringify({
-        model: AI_MODEL, max_tokens: 1500, system: AI_SYSTEM, tools: [AI_TOOL],
-        tool_choice: { type: 'tool', name: AI_TOOL.name }, messages: [{ role: 'user', content: blocks }]
+        model: AI_MODEL, max_tokens: 4096, system: AI_SYSTEM, tools: [AI_TOOL],
+        tool_choice: { type: 'auto' }, messages: messages
       })
     });
   } catch (e) { throw aiErr(e && e.name === 'AbortError' ? 'timeout' : 'rede'); }
@@ -1148,9 +1149,23 @@ async function aiCall(blocks) {
   var data = null;
   try { data = await resp.json(); } catch (e) {}
   if (!resp.ok) throw aiErr('http', { status: resp.status, msg: data && data.error && data.error.message });
-  var tu = ((data && data.content) || []).filter(function (b) { return b.type === 'tool_use'; })[0];
-  if (!tu || !tu.input) throw aiErr('vazio');
-  return tu.input;
+  return data;
+}
+function aiToolInput(data) {
+  var tu = ((data && data.content) || []).filter(function (b) { return b.type === 'tool_use' && b.name === AI_TOOL.name; })[0];
+  return tu && tu.input && typeof tu.input === 'object' ? tu.input : null;
+}
+async function aiCall(blocks) {
+  var user = { role: 'user', content: blocks };
+  var data = await aiPost([user]), input = aiToolInput(data);
+  if (!input && data && data.stop_reason !== 'max_tokens' && Array.isArray(data.content) && data.content.length) {
+    // O modelo respondeu só com texto: pede uma vez, de forma explícita, que chame a ferramenta.
+    data = await aiPost([user, { role: 'assistant', content: data.content },
+      { role: 'user', content: 'Chame agora a ferramenta preencher_cadastro com os dados lidos nos documentos. Não escreva texto.' }]);
+    input = aiToolInput(data);
+  }
+  if (!input) throw aiErr('vazio');
+  return input;
 }
 function aiErrText(e) {
   var c = e && e.code, x = (e && e.extra) || {};
