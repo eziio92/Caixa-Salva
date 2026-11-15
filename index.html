@@ -1161,12 +1161,15 @@ function aiErrText(e) {
   if (c === 'vazio') return 'A leitura não trouxe dados. Tente com fotos mais nítidas.';
   if (c === 'muitos') return 'Escolha até ' + AI_MAX_FILES + ' arquivos de cada vez.';
   if (c === 'http') {
+    var m = String(x.msg || '').replace(/\s+/g, ' ').trim().slice(0, 240);       // texto de erro da própria API (não contém a chave nem os documentos)
     if (x.status === 401 || x.status === 403) return 'A chave foi recusada. Em Ajustes, esqueça a chave e cole de novo.';
     if (x.status === 429) return 'Limite de uso atingido por agora. Espere um pouco e tente de novo.';
-    if (x.status === 400 && /credit|balance/i.test(x.msg || '')) return 'A chave está sem saldo ou sem limite. Veja o painel da Anthropic.';
+    if (/usage limit|spend limit|workspace.*limit/i.test(m)) return 'O limite de gasto do espaço da chave foi atingido. Aumente o limite no painel da Anthropic (Limits) ou espere o próximo período.';
+    if (/credit|balance/i.test(m)) return 'A conta está sem saldo. Adicione créditos no painel da Anthropic (Billing).';
+    if (/organization.*disabled|disabled.*organization/i.test(m)) return 'A conta da Anthropic está desativada. Veja o painel da Anthropic.';
     if (x.status === 413) return 'Os arquivos são grandes demais.';
     if (x.status >= 500) return 'O serviço de leitura está instável agora. Tente de novo em instantes.';
-    return 'Não foi possível ler os documentos (erro ' + x.status + ').';
+    return 'Não foi possível ler os documentos (erro ' + x.status + (m ? ': ' + m : '') + ').';
   }
   return 'Não foi possível ler os documentos.';
 }
