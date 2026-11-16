@@ -3,8 +3,8 @@
 // A rede é sempre consultada de novo ("no-cache"): o GitHub Pages deixa o navegador reutilizar a página por até
 // 10 minutos, e abrir o app logo antes da publicação terminar prendia a versão velha durante esse tempo.
 // Ao publicar uma nova versão do app, basta mudar o número abaixo.
-const CACHE = 'caixa-salva-v9';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './festa.jpg'];
+const CACHE = 'caixa-salva-v10';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './festa.jpg', './blague.js', './blague.jpg'];
 
 self.addEventListener('install', (e) => {
   // 'reload' ignora o cache HTTP do navegador, para não guardar uma cópia velha dos arquivos
@@ -42,6 +42,8 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Vídeo (blague): o iPhone o pede em pedaços (Range); o cache não guarda isso, então vai direto à rede.
+  if (req.headers.has('range') || url.pathname.endsWith('.mp4')) return;
 
   if (url.pathname.endsWith('/lembrete.ics')) {
     e.respondWith(icsResponse(url.searchParams.get('c')));
