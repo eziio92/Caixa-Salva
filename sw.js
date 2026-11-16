@@ -3,7 +3,7 @@
 // A rede é sempre consultada de novo ("no-cache"): o GitHub Pages deixa o navegador reutilizar a página por até
 // 10 minutos, e abrir o app logo antes da publicação terminar prendia a versão velha durante esse tempo.
 // Ao publicar uma nova versão do app, basta mudar o número abaixo.
-const CACHE = 'caixa-salva-v11';
+const CACHE = 'caixa-salva-v12';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './festa.jpg'];
 
 self.addEventListener('install', (e) => {
