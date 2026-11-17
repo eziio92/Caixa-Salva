@@ -61,6 +61,9 @@ td{padding:13px 8px;border-bottom:1px solid var(--line);text-align:right;font-si
 th:first-child,td:first-child{text-align:left;padding-left:14px}
 th:last-child,td:last-child{padding-right:14px}
 td.name{width:100%;max-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+td.name small{display:block;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:11px;font-weight:500}
+.plist{display:grid;grid-template-columns:auto 1fr auto;gap:8px 14px;font-size:14px;font-variant-numeric:tabular-nums;margin:2px 4px 10px}
+.plist .ok{color:var(--accent-text);font-weight:700}.plist .late{color:var(--danger);font-weight:700}.plist .mut{color:var(--muted)}
 tbody tr{cursor:pointer}
 tbody tr:active{background:var(--accent-soft)}
 tfoot td{font-weight:700;border-bottom:0;background:var(--accent-soft);padding-top:14px;padding-bottom:14px;font-size:14px}
@@ -299,6 +302,13 @@ function monthLater(s, minusDay) {
   var t = new Date(y, m - 1, d);
   return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate());
 }
+// n meses depois da data (limitado ao fim do mês, sempre a partir do dia original); com minusDay, um dia a menos
+function addMonths(s, n, minusDay) {
+  var p = parseISO(s), idx = p.y * 12 + (p.m - 1) + n, y = Math.floor(idx / 12), m = idx % 12 + 1;
+  var dim = new Date(y, m, 0).getDate(), d = Math.min(p.d, dim) - (minusDay ? 1 : 0);
+  var t = new Date(y, m - 1, d);
+  return isoDate(t.getFullYear(), t.getMonth() + 1, t.getDate());
+}
 function reminderDate(s) { return monthLater(s, true); }  // ex.: 10/11 -> 09/12
 function dueDate(s) { return monthLater(s, false); }      // ex.: 10/11 -> 10/12
 function diffDays(a, b) {
@@ -315,11 +325,32 @@ function fmtLong(s) {
 /* ---------- Dinheiro (guardado em centavos) ---------- */
 function brl(c) { return (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function num(c) { return (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function loanTotal(l) { return Math.round(l.valor * (100 + (l.taxa == null ? RATE : l.taxa)) / 100); }
-function loanInterest(l) { return loanTotal(l) - l.valor; }   // os 30 %: o que o empréstimo rende
+function loanTotal(l) { return isParc(l) ? l.parc.n * l.parc.v : Math.round(l.valor * (100 + (l.taxa == null ? RATE : l.taxa)) / 100); }
+function loanInterest(l) { return loanTotal(l) - l.valor; }   // os 30 % (ou, no parcelado, o total das parcelas menos o emprestado)
+
+/* ---------- Empréstimo parcelado: l.parc = { n: nº de parcelas, v: valor da parcela (centavos), pagas: ['AAAA-MM-DD', ...] } ---------- */
+// A parcela k (0, 1, ...) vence k+1 meses depois da data do empréstimo; o lembrete é 1 dia antes, como no pagamento único.
+function isParc(l) { return !!(l && l.parc && l.parc.n > 0 && l.parc.v > 0); }
+function parcPaid(l) { return Array.isArray(l.parc.pagas) ? l.parc.pagas.length : 0; }
+function parcIdx(l) { return Math.min(parcPaid(l), l.parc.n - 1); }   // a próxima parcela a cobrar (ou a última, se tudo foi pago)
+function remOf(l, k) { return isParc(l) ? addMonths(l.date, (k == null ? parcIdx(l) : k) + 1, true) : reminderDate(l.date); }
+function dueOf(l, k) { return isParc(l) ? addMonths(l.date, (k == null ? parcIdx(l) : k) + 1, false) : dueDate(l.date); }
+// Juros ao prorata: cada parcela rende uma fração igual do total (arredondada de modo que a soma feche exatamente)
+function parcJuros(l, k) { var tot = loanInterest(l), n = l.parc.n; return Math.round(tot * (k + 1) / n) - Math.round(tot * k / n); }
+function parcLate(l, t) { var c = 0; for (var k = parcPaid(l); k < l.parc.n; k++) { if (remOf(l, k) <= t) c++; else break; } return c; }
+function dueNow(l, t) { return isParc(l) ? parcLate(l, t) * l.parc.v : loanTotal(l); }   // o que já pode ser cobrado
+// Cola um valor em reais: "400", "400,50", "1.200,00", "R$ 400,00" ou "400.50" (devolve centavos ou null)
+function parseReais(s) {
+  s = String(s || '').replace(/R\$|\s|\u00a0/g, '');
+  var m = s.match(/^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/);
+  if (m) return parseInt(m[1].replace(/\./g, ''), 10) * 100 + (m[2] ? parseInt((m[2] + '0').slice(0, 2), 10) : 0);
+  m = s.match(/^(\d+)\.(\d{1,2})$/);
+  if (m) return parseInt(m[1], 10) * 100 + parseInt((m[2] + '0').slice(0, 2), 10);
+  return null;
+}
 function fullName(l) { return ((l.nome || '') + ' ' + (l.sobrenome || '')).trim(); }
 function byReminder(a, b) {
-  var x = reminderDate(a.date), y = reminderDate(b.date);
+  var x = remOf(a), y = remOf(b);
   return x < y ? -1 : x > y ? 1 : 0;
 }
 function byDateDesc(a, b) {
@@ -365,6 +396,7 @@ function personOf(l) {
 // Dados para um novo empréstimo: identidade mais recente preenchida + valor do último empréstimo
 function prefillFor(p) {
   var pre = { nome: p.last.nome, sobrenome: p.last.sobrenome, valor: p.last.valor };
+  if (isParc(p.last)) pre.parc = { n: p.last.parc.n, v: p.last.parc.v };
   ['cpf', 'phone', 'endereco', 'profissao', 'indicacao', 'salario'].forEach(function (k) {
     for (var i = 0; i < p.loans.length; i++) { if (p.loans[i][k]) { pre[k] = p.loans[i][k]; break; } }
   });
@@ -374,18 +406,19 @@ function prefillFor(p) {
 function lateGroups(t) {
   var keyOf = personKeyer(), map = {}, list = [];
   db.loans.forEach(function (l) {
-    if (l.status === 'paid' || reminderDate(l.date) > t) return;
+    if (l.status === 'paid' || remOf(l) > t) return;
     var k = keyOf(l), g = map[k];
     if (!g) { g = map[k] = { key: k, loans: [], total: 0 }; list.push(g); }
-    g.loans.push(l); g.total += loanTotal(l);
+    g.loans.push(l); g.total += dueNow(l, t);
   });
   list.forEach(function (g) { g.loans.sort(byReminder); });
   list.sort(function (a, b) { return byReminder(a.loans[0], b.loans[0]); });
   return list;
 }
 function loanRow(l) {
-  var paid = l.status === 'paid';
-  var sub = paid ? (l.paidAt ? 'quitado em ' + fmtFull(l.paidAt) : 'quitado') : 'em aberto · lembrete ' + fmtShort(reminderDate(l.date));
+  var paid = l.status === 'paid', pc = isParc(l), pinfo = pc ? l.parc.n + '× ' + brl(l.parc.v) + ' · ' : '';
+  var sub = paid ? pinfo + (l.paidAt ? 'quitado em ' + fmtFull(l.paidAt) : 'quitado')
+    : 'em aberto · ' + (pc ? pinfo + parcPaid(l) + '/' + l.parc.n + ' pagas · ' : '') + 'lembrete ' + fmtShort(remOf(l));
   return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + fmtFull(l.date) + ' · ' + brl(l.valor) + '<small>' + sub + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
 }
 
@@ -476,9 +509,11 @@ function renderBanners() {
     groups.forEach(function (g) { sum += g.total; });
     h += '<div class="card alert"><p class="alert-title alert-head"><span>' + (n === 1 ? '1 pessoa para cobrar' : n + ' pessoas para cobrar') + '</span>' + (n > 1 ? '<span>' + brl(sum) + '</span>' : '') + '</p>';
     h += groups.slice(0, cap).map(function (g) {
-      var l = g.loans[0], d = diffDays(reminderDate(l.date), t);
+      var l = g.loans[0], d = diffDays(remOf(l), t);
       var when = d === 0 ? 'lembrete de hoje' : 'lembrete há ' + d + (d === 1 ? ' dia' : ' dias');
-      var sub = g.loans.length > 1 ? g.loans.length + ' empréstimos · ' + (d === 0 ? 'hoje' : 'há ' + d + (d === 1 ? ' dia' : ' dias')) : when + ' · vence ' + fmtShort(dueDate(l.date));
+      var pre = '';
+      if (g.loans.length === 1 && isParc(l)) { var pcnt = parcLate(l, t); pre = (pcnt > 1 ? pcnt + ' parcelas · ' : 'parcela ' + (parcIdx(l) + 1) + '/' + l.parc.n + ' · '); }
+      var sub = g.loans.length > 1 ? g.loans.length + ' empréstimos · ' + (d === 0 ? 'hoje' : 'há ' + d + (d === 1 ? ' dia' : ' dias')) : pre + when + ' · vence ' + fmtShort(dueOf(l));
       return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>' + sub + '</small></span><b>' + brl(g.total) + '</b></button>';
     }).join('');
     if (n > cap) h += '<button class="more-btn" data-act="late-all">+ ' + (n - cap) + ' outros · ver todos</button>';
@@ -493,7 +528,7 @@ function renderBanners() {
 function renderList() {
   var act = filter === 'active', t = todayISO();
   var all = db.loans.filter(function (l) { return act ? l.status !== 'paid' : l.status === 'paid'; });
-  function isLate(l) { return reminderDate(l.date) <= t; }
+  function isLate(l) { return remOf(l) <= t; }
   if (lateOnly && !(act && all.some(isLate))) lateOnly = false;   // nada mais atrasado: sai do filtro
   var loans = (act && lateOnly) ? all.filter(isLate) : all;
   var tokens = normName(query) ? normName(query).split(' ') : [];
@@ -515,15 +550,15 @@ function renderList() {
         : 'Nenhum empréstimo quitado ainda.') + '</div>';
     return;
   }
-  var sumP = 0, sumJ = 0;
+  var sumP = 0, sumJ = 0, anyP = loans.some(isParc);
   var rows = loans.map(function (l) {
     var jur = loanInterest(l); sumP += l.valor; sumJ += jur;
     var cell, cls = '';
-    if (act) { var r = reminderDate(l.date); cell = fmtShort(r); cls = r < t ? 'late' : (r === t ? 'today' : ''); }
+    if (act) { var r = remOf(l); cell = fmtShort(r); cls = r < t ? 'late' : (r === t ? 'today' : ''); }
     else cell = l.paidAt ? fmtShort(l.paidAt) : '—';
-    return '<tr data-act="detail" data-id="' + l.id + '"><td class="name">' + esc(fullName(l)) + '</td><td>' + num(l.valor) + '</td><td>' + num(jur) + '</td><td class="' + cls + '">' + cell + '</td></tr>';
+    return '<tr data-act="detail" data-id="' + l.id + '"><td class="name">' + esc(fullName(l)) + (isParc(l) ? '<small>' + (act ? parcPaid(l) + '/' : '') + l.parc.n + ' parcelas</small>' : '') + '</td><td>' + num(l.valor) + '</td><td>' + num(jur) + '</td><td class="' + cls + '">' + cell + '</td></tr>';
   }).join('');
-  el.innerHTML = pill + '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Juros ' + RATE + '%</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
+  el.innerHTML = pill + '<div class="card"><table><thead><tr><th>Nome</th><th>Emprestado</th><th>Juros' + (anyP ? '' : ' ' + RATE + '%') + '</th><th>' + (act ? 'Lembrete' : 'Pago em') + '</th></tr></thead><tbody>' + rows +
     '</tbody><tfoot><tr><td>Total · ' + loans.length + '</td><td>' + num(sumP) + '</td><td>' + num(sumJ) + '</td><td></td></tr></tfoot></table></div>' +
     '<p class="note">Valores em reais (R$). Toque em uma linha para ver os detalhes.</p>';
 }
@@ -532,8 +567,10 @@ function renderCal() {
   var y = calM.y, m = calM.m, t = todayISO();
   var first = new Date(y, m - 1, 1).getDay(), dim = new Date(y, m, 0).getDate();
   var map = {};
+  // cada lembrete é { l: empréstimo, k: nº da parcela (0, 1, ...) ou -1 no pagamento único }
   db.loans.filter(function (l) { return l.status !== 'paid'; }).forEach(function (l) {
-    var r = reminderDate(l.date); (map[r] = map[r] || []).push(l);
+    if (isParc(l)) { for (var k = parcPaid(l); k < l.parc.n; k++) { var rk = remOf(l, k); (map[rk] = map[rk] || []).push({ l: l, k: k }); } }
+    else { var r = reminderDate(l.date); (map[r] = map[r] || []).push({ l: l, k: -1 }); }
   });
   var cells = '';
   for (var i = 0; i < first; i++) cells += '<span class="cell empty"></span>';
@@ -544,10 +581,13 @@ function renderCal() {
       (n ? '<i class="dot ' + tone + '">' + n + '</i>' : '<i class="dot ph">0</i>') + '</button>';
   }
   var prefix = y + '-' + pad(m) + '-', cnt = 0, sum = 0, pend = 0;
-  Object.keys(map).forEach(function (k) { if (k.indexOf(prefix) === 0) map[k].forEach(function (l) { cnt++; sum += loanTotal(l); pend += loanInterest(l); }); });
+  Object.keys(map).forEach(function (k) { if (k.indexOf(prefix) === 0) map[k].forEach(function (e) { cnt++; sum += e.k < 0 ? loanTotal(e.l) : e.l.parc.v; pend += e.k < 0 ? loanInterest(e.l) : parcJuros(e.l, e.k); }); });
   // juros do mês: já recebidos (empréstimos quitados dentro do mês) + ainda a receber (lembretes do mês)
   var got = 0;
-  db.loans.forEach(function (l) { if (l.status === 'paid' && l.paidAt && l.paidAt.indexOf(prefix) === 0) got += loanInterest(l); });
+  db.loans.forEach(function (l) {
+    if (isParc(l)) { (l.parc.pagas || []).forEach(function (d, k) { if (d && d.indexOf(prefix) === 0) got += parcJuros(l, k); }); }   // parcelado: a fração de cada parcela paga no mês
+    else if (l.status === 'paid' && l.paidAt && l.paidAt.indexOf(prefix) === 0) got += loanInterest(l);
+  });
   var monthName = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long' });
   var title = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   var dayLoans = map[calSel] || [];
@@ -559,8 +599,9 @@ function renderCal() {
     '<div class="cal-grid">' + dow + cells + '</div>' +
     '<p class="month-sum">' + (cnt ? cnt + (cnt === 1 ? ' lembrete' : ' lembretes') + ' neste mês · ' + brl(sum) + ' a receber' : 'Nenhum lembrete neste mês.') + '</p>' +
     '<div class="card pad"><h3>' + esc(fmtLong(calSel)) + '</h3>' +
-    (dayLoans.length ? dayLoans.map(function (l) {
-      return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>emprestado ' + brl(l.valor) + '</small></span><b>' + brl(loanTotal(l)) + '</b></button>';
+    (dayLoans.length ? dayLoans.map(function (e) {
+      var l = e.l;
+      return '<button class="row-btn" data-act="detail" data-id="' + l.id + '"><span>' + esc(fullName(l)) + '<small>' + (e.k >= 0 ? 'parcela ' + (e.k + 1) + '/' + l.parc.n + ' · ' : '') + 'emprestado ' + brl(l.valor) + '</small></span><b>' + brl(e.k >= 0 ? l.parc.v : loanTotal(l)) + '</b></button>';
     }).join('') : '<p class="muted" style="margin:0">Nenhum lembrete neste dia.</p>') + '</div>';
 }
 
@@ -577,8 +618,12 @@ function moveMonth(delta) {
 /* ---------- Formulário ---------- */
 function openForm(id, pre) {
   var l = id ? find(id) : null, v = l || pre || {};
+  // parcelado: P guarda n e v (editando, os do empréstimo; novo para a mesma pessoa, os do último)
+  var P = (l ? l.parc : (pre && pre.parc)) || null; if (P && !isParc({ parc: P })) P = null;
+  var mode = P ? 'parc' : 'unico', lockP = !!(l && isParc(l) && parcPaid(l) > 0);
+  var showSeg = !l || (l.status !== 'paid' && !lockP);
   var html =
-    '<form id="loan-form" novalidate data-id="' + (l ? l.id : '') + '" data-taxa="' + (l && l.taxa != null ? l.taxa : RATE) + '">' +
+    '<form id="loan-form" novalidate data-id="' + (l ? l.id : '') + '" data-mode="' + mode + '" data-taxa="' + (l && l.taxa != null ? l.taxa : RATE) + '">' +
     '<div class="sheet-head"><h2>' + (l ? 'Editar empréstimo' : 'Novo empréstimo') + '</h2><button type="button" class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' +
     (l ? '' : '<p class="help" id="prefill-note"' + (pre ? '' : ' hidden') + '>Dados preenchidos a partir do último empréstimo. Confira o valor e a data.</p>') +
     (l ? '' : '<div class="docs-box" id="docs-box">' + docsBoxHtml() + '</div>') +
@@ -595,7 +640,12 @@ function openForm(id, pre) {
     '<div id="suggest-ind"></div>' +
     '<label>Salário mensal (R$)<input name="salario" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-cents="' + (v.salario || 0) + '" value="' + (v.salario ? num(v.salario) : '') + '"></label>' +
     '<div class="loan-box">' +
-      '<label>Valor emprestado (R$)<input name="valor" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-cents="' + (v.valor || 0) + '" value="' + (v.valor ? num(v.valor) : '') + '"></label>' +
+      (showSeg ? '<div class="seg" id="mode-seg" role="group" aria-label="Forma de pagamento"><button type="button" data-act="mode" data-m="unico" aria-pressed="' + (mode === 'unico') + '">Pagamento único</button><button type="button" data-act="mode" data-m="parc" aria-pressed="' + (mode === 'parc') + '">Parcelado</button></div>' : '') +
+      '<label>Valor emprestado (R$)<input name="valor" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-paste="reais" data-cents="' + (v.valor || 0) + '" value="' + (v.valor ? num(v.valor) : '') + '"></label>' +
+      '<div id="parc-fields"' + (mode === 'parc' ? '' : ' hidden') + '><div class="grid2">' +
+        '<label>Nº de parcelas<input name="pn" inputmode="numeric" autocomplete="off" placeholder="10" data-mask="int" value="' + (P ? P.n : '') + '"' + (lockP ? ' readonly' : '') + '></label>' +
+        '<label>Valor da parcela (R$)<input name="pv" inputmode="numeric" autocomplete="off" placeholder="0,00" data-mask="money" data-paste="reais" data-cents="' + (P ? P.v : 0) + '" value="' + (P ? num(P.v) : '') + '"' + (lockP ? ' readonly' : '') + '></label>' +
+      '</div>' + (lockP ? '<p class="help" style="margin-top:-4px">Já há parcelas pagas: para mudar o número ou o valor da parcela, desfaça os pagamentos no detalhe do empréstimo.</p>' : '') + '</div>' +
       '<label>Data do empréstimo<input name="date" type="date" value="' + esc(v.date || todayISO()) + '"></label>' +
       '<p class="preview" id="preview"></p>' +
     '</div>' +
@@ -678,6 +728,12 @@ function pickIndicacao(name) {
 function updatePreview() {
   var f = $('#loan-form'); if (!f) return;
   var c = centsOf(f.elements.valor), d = f.elements.date.value, out = $('#preview');
+  if (f.dataset.mode === 'parc') {
+    var n = parseInt(f.elements.pn.value, 10) || 0, pv = centsOf(f.elements.pv);
+    if (!c || !n || !pv || !/^\d{4}-\d{2}-\d{2}$/.test(d)) { out.textContent = 'Informe o valor, o nº de parcelas, o valor da parcela e a data para ver o total.'; return; }
+    out.textContent = 'Total a receber: ' + brl(n * pv) + ' (' + n + ' × ' + brl(pv) + ') · Juros: ' + brl(n * pv - c) + ' · 1º lembrete em ' + fmtFull(addMonths(d, 1, true));
+    return;
+  }
   var taxa = parseInt(f.dataset.taxa, 10); if (isNaN(taxa)) taxa = RATE;
   if (!c || !/^\d{4}-\d{2}-\d{2}$/.test(d)) { out.textContent = 'Informe o valor e a data para ver o total e o lembrete.'; return; }
   out.textContent = 'Total a receber: ' + brl(Math.round(c * (100 + taxa) / 100)) + ' · Lembrete em ' + fmtFull(reminderDate(d));
@@ -686,9 +742,14 @@ function updatePreview() {
 function submitForm(f) {
   var el = f.elements, err = $('#form-err');
   function fail(msg, field) { err.textContent = msg; if (field) field.focus(); }
-  var nome = el.nome.value.trim(), valor = centsOf(el.valor), date = el.date.value;
+  var nome = el.nome.value.trim(), valor = centsOf(el.valor), date = el.date.value, isP = f.dataset.mode === 'parc', pn = 0, pv = 0;
   if (!nome) return fail('Informe o nome.', el.nome);
   if (!valor) return fail('Informe o valor emprestado.', el.valor);
+  if (isP) {
+    pn = parseInt(el.pn.value, 10) || 0; pv = centsOf(el.pv);
+    if (pn < 1 || pn > 120) return fail('Informe o número de parcelas (de 1 a 120).', el.pn);
+    if (!pv) return fail('Informe o valor da parcela.', el.pv);
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Informe a data do empréstimo.', el.date);
   var data = {
     nome: nome, sobrenome: el.sobrenome.value.trim(), cpf: el.cpf.value.trim(), phone: el.phone.value.trim(),
@@ -696,9 +757,17 @@ function submitForm(f) {
     valor: valor, date: date
   };
   var editId = f.dataset.id, loan;
-  if (editId) { loan = find(editId); if (loan.date !== data.date || loan.valor !== data.valor) delete loan.calAt; Object.assign(loan, data); }
-  else {
-    loan = Object.assign({ id: uid(), taxa: RATE, status: 'active', paidAt: null, createdAt: Date.now() }, data);
+  if (editId) {
+    loan = find(editId);
+    var oldP = isParc(loan) ? loan.parc : null;
+    if (isP && oldP && parcPaid(loan) > 0) { pn = oldP.n; pv = oldP.v; }   // com parcelas pagas, número e valor da parcela ficam travados
+    if (loan.date !== data.date || loan.valor !== data.valor || (isP ? (!oldP || oldP.n !== pn || oldP.v !== pv) : !!oldP)) delete loan.calAt;
+    Object.assign(loan, data);
+    if (isP) { loan.parc = { n: pn, v: pv, pagas: oldP && Array.isArray(oldP.pagas) ? oldP.pagas : [] }; loan.taxa = null; }
+    else if (oldP) { delete loan.parc; if (loan.taxa == null) loan.taxa = RATE; }
+  } else {
+    loan = Object.assign({ id: uid(), taxa: isP ? null : RATE, status: 'active', paidAt: null, createdAt: Date.now() }, data);
+    if (isP) loan.parc = { n: pn, v: pv, pagas: [] };
     db.loans.push(loan);
   }
   save(); closeSheet(); render();
@@ -741,56 +810,96 @@ function phoneDigits(p) {
 
 function openDetail(id) {
   var l = find(id); if (!l) return;
-  var paid = l.status === 'paid', total = loanTotal(l), t = todayISO();
-  var r = reminderDate(l.date);
+  var paid = l.status === 'paid', total = loanTotal(l), t = todayISO(), pc = isParc(l);
+  var r = remOf(l), pk = pc ? parcIdx(l) : 0, pn = pc ? l.parc.n : 0;
   var chip = paid ? '<span class="chip">Quitado</span>' : (r < t ? '<span class="chip late">Para cobrar</span>' : (r === t ? '<span class="chip late">Cobrar hoje</span>' : ''));
-  var rows = [
+  var rows = (pc ? [
+    ['Valor emprestado', brl(l.valor)],
+    ['Parcelas', pn + ' × ' + brl(l.parc.v)],
+    ['Total a receber', brl(total)],
+    ['Juros', brl(loanInterest(l))],
+    ['Pagas', parcPaid(l) + ' de ' + pn + ' · ' + brl(parcPaid(l) * l.parc.v)],
+    ['Emprestado em', fmtFull(l.date)],
+    paid ? ['Quitado em', l.paidAt ? fmtFull(l.paidAt) : ''] : ['Próxima parcela', (pk + 1) + '/' + pn + ' · vence ' + fmtFull(dueOf(l))],
+    paid ? ['', ''] : ['Lembrete em', fmtFull(r)]
+  ] : [
     ['Valor emprestado', brl(l.valor)],
     ['Com juros (' + (l.taxa == null ? RATE : l.taxa) + '%)', brl(total)],
     ['Emprestado em', fmtFull(l.date)],
     paid ? ['Quitado em', l.paidAt ? fmtFull(l.paidAt) : ''] : ['Lembrete em', fmtFull(r)],
-    paid ? ['', ''] : ['Vencimento', fmtFull(dueDate(l.date))],
+    paid ? ['', ''] : ['Vencimento', fmtFull(dueDate(l.date))]
+  ]).concat([
     ['Telefone', l.phone], ['CPF', l.cpf], ['Endereço', l.endereco], ['Profissão', l.profissao], ['Indicado por', l.indicacao],
     ['Salário mensal', l.salario ? brl(l.salario) : ''],
-    ['Calendário', !paid && l.calAt ? 'Lembrete adicionado em ' + fmtFull(l.calAt) : '']
-  ];
+    ['Calendário', !paid && l.calAt ? (pc ? 'Lembretes adicionados em ' : 'Lembrete adicionado em ') + fmtFull(l.calAt) : '']
+  ]);
   var btns = '';
   var digits = phoneDigits(l.phone);
   var contact = '';
   if (digits) {
-    var msg = 'Olá ' + l.nome + ', tudo bem? Passando para lembrar do pagamento de ' + brl(total).replace(/\u00a0/g, ' ') + ', combinado para ' + fmtShort(dueDate(l.date)) + '.';
+    var msg = pc
+      ? 'Olá ' + l.nome + ', tudo bem? Passando para lembrar da parcela ' + (pk + 1) + '/' + pn + ', de ' + brl(l.parc.v).replace(/\u00a0/g, ' ') + ', combinada para ' + fmtShort(dueOf(l)) + '.'
+      : 'Olá ' + l.nome + ', tudo bem? Passando para lembrar do pagamento de ' + brl(total).replace(/\u00a0/g, ' ') + ', combinado para ' + fmtShort(dueDate(l.date)) + '.';
     contact = '<div class="grid2"><a class="btn" target="_blank" rel="noopener" href="https://wa.me/' + digits + '?text=' + encodeURIComponent(msg) + '">WhatsApp</a><a class="btn" href="tel:+' + digits + '">Ligar</a></div>';
   }
   if (!paid) {
-    btns += '<button class="btn primary" data-act="pay" data-id="' + id + '">Marcar como pago</button>' +
+    btns += '<button class="btn primary" data-act="pay" data-id="' + id + '">' + (pc ? 'Marcar parcela ' + (pk + 1) + '/' + pn + ' como paga' : 'Marcar como pago') + '</button>' +
       calLink(l) + calLink(l, 'alt') + contact;
+    if (pc && parcPaid(l) > 0) btns += '<button class="btn" data-act="unpay" data-id="' + id + '">Desfazer a última parcela paga</button>';
   } else {
-    btns += '<button class="btn" data-act="reopen" data-id="' + id + '">Reabrir empréstimo</button>';
+    btns += '<button class="btn" data-act="reopen" data-id="' + id + '">' + (pc ? 'Reabrir (desfaz a última parcela)' : 'Reabrir empréstimo') + '</button>';
   }
   btns += '<button class="btn' + (paid ? ' primary' : '') + '" data-act="new-for" data-id="' + id + '">Novo empréstimo para ' + esc(l.nome) + '</button>';
   btns += '<div class="grid2"><button class="btn" data-act="edit" data-id="' + id + '">Editar</button><button class="btn danger" data-act="delete" data-id="' + id + '">Excluir</button></div>';
   // histórico: os outros empréstimos da mesma pessoa (os 5 mais recentes à vista, o resto recolhido)
+  var sched = '';
+  if (pc) {
+    var pl = '';
+    for (var kk = 0; kk < pn; kk++) {
+      var pd = l.parc.pagas[kk], lateK = !pd && remOf(l, kk) <= t;
+      pl += '<span>' + (kk + 1) + '/' + pn + '</span><span class="mut">vence ' + fmtFull(dueOf(l, kk)) + '</span><span class="' + (pd ? 'ok' : (lateK ? 'late' : 'mut')) + '">' + (pd ? '✓ pago ' + fmtShort(pd) : (lateK ? 'para cobrar' : 'a vencer')) + '</span>';
+    }
+    sched = '<div class="card pad"><details><summary>Ver as ' + pn + ' parcelas</summary><div class="plist">' + pl + '</div></details></div>';
+  }
   var oth = personOf(l).loans.filter(function (x) { return x.id !== l.id; }), othHtml = '';
   if (oth.length) {
     othHtml = '<div class="card pad"><h3>Outros empréstimos de ' + esc(l.nome) + ' (' + oth.length + ')</h3>' + oth.slice(0, 5).map(loanRow).join('') +
       (oth.length > 5 ? '<details><summary>Ver os ' + (oth.length - 5) + ' mais antigos</summary>' + oth.slice(5).map(loanRow).join('') + '</details>' : '') + '</div>';
   }
-  openSheet('<div class="sheet-head"><h2>' + esc(fullName(l)) + chip + '</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' + kv(rows) + othHtml + '<div class="stack">' + btns + '</div>');
+  openSheet('<div class="sheet-head"><h2>' + esc(fullName(l)) + chip + '</h2><button class="icon-btn" data-act="close" aria-label="Fechar">✕</button></div>' + kv(rows) + sched + othHtml + '<div class="stack">' + btns + '</div>');
 }
 
 function openSaved(id) {
-  var l = find(id), r = reminderDate(l.date), t = todayISO();
+  var l = find(id), pc = isParc(l), r = remOf(l), t = todayISO();
   var past = r <= t ? '<p class="muted">Essa data já passou ou é hoje, então o aviso do Calendário não vai tocar.</p>' : '';
   openSheet(
     '<div class="done"><div class="check">✓</div><h2>Empréstimo salvo</h2>' +
     '<p>' + esc(fullName(l)) + ' · ' + brl(l.valor) + ' → <b>' + brl(loanTotal(l)) + '</b></p>' +
-    '<p class="muted">Lembrete: <b>' + esc(fmtLong(r)) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p>' + past + '</div>' +
+    (pc ? '<p class="muted">' + l.parc.n + ' parcelas de <b>' + brl(l.parc.v) + '</b></p>' : '') +
+    '<p class="muted">' + (pc ? 'Primeiro lembrete: ' : 'Lembrete: ') + '<b>' + esc(fmtLong(r)) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p>' + past + '</div>' +
     '<div class="stack">' + calLink(l, 'primary') + calLink(l, 'alt') +
     '<button class="btn" data-act="close">Agora não</button></div>');
 }
 
+async function unpayLoan(id) {
+  var l = find(id); if (!l || !isParc(l) || !parcPaid(l)) return;
+  var k = parcPaid(l) - 1;
+  var yes = await askConfirm({ title: 'Desfazer o pagamento da parcela ' + (k + 1) + '/' + l.parc.n + '?', text: 'Ela foi registrada em ' + fmtFull(l.parc.pagas[k]) + '.', ok: 'Desfazer', danger: true, cancel: 'Manter' });
+  if (!yes) return;
+  l.parc.pagas.pop(); save(); closeSheet(); render(); toast('Pagamento desfeito');
+}
 async function payLoan(id) {
   var l = find(id); if (!l) return;
+  if (isParc(l)) {
+    var k = parcPaid(l), n = l.parc.n, last = k === n - 1;
+    var okp = await askConfirm({ title: fullName(l) + ' pagou a parcela ' + (k + 1) + '/' + n + ' (' + plain(brl(l.parc.v)) + ')?', text: last ? 'É a última parcela: o empréstimo será quitado.' : '', ok: last ? 'Sim, quitar' : 'Sim, registrar', cancel: 'Ainda não' });
+    if (!okp) return;
+    l.parc.pagas.push(todayISO());
+    if (last) { l.status = 'paid'; l.paidAt = todayISO(); }
+    save(); closeSheet(); render();
+    if (last) celebrate(l); else toast('Parcela ' + (k + 1) + '/' + n + ' registrada');
+    return;
+  }
   var extra = reminderDate(l.date) > todayISO() ? 'O lembrete já adicionado ao Calendário ainda vai tocar: apague-o por lá.' : '';
   var yes = await askConfirm({ title: fullName(l) + ' pagou ' + plain(brl(loanTotal(l))) + '?', text: extra, ok: 'Sim, quitar', cancel: 'Ainda não' });
   if (!yes) return;
@@ -868,19 +977,29 @@ function foldLine(line) {
   return out.join('\r\n');
 }
 function plain(s) { return s.replace(/\u00a0/g, ' '); }
-function makeICS(l) {
-  var r = parseISO(reminderDate(l.date)), h = db.settings.reminderHour;
-  var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-  var day = '' + r.y + pad(r.m) + pad(r.d);
-  var title = 'Cobrar ' + fullName(l) + ' — ' + plain(brl(loanTotal(l)));
-  var desc = ['Valor a receber: ' + plain(brl(loanTotal(l))),
-    'Emprestado: ' + plain(brl(l.valor)) + ' em ' + fmtFull(l.date),
-    'Vencimento: ' + fmtFull(dueDate(l.date))];
+// Quais parcelas entram no arquivo do Calendário: as ainda não pagas e que não passaram; se todas passaram, a próxima a cobrar
+function icsKs(l) {
+  if (!isParc(l)) return [-1];
+  var t = todayISO(), ks = [];
+  for (var k = parcPaid(l); k < l.parc.n; k++) if (remOf(l, k) >= t) ks.push(k);
+  return ks.length ? ks : [parcIdx(l)];
+}
+function icsEvent(l, k, stamp, h) {
+  var pc = k >= 0, r = parseISO(remOf(l, pc ? k : null)), day = '' + r.y + pad(r.m) + pad(r.d);
+  var amount = pc ? l.parc.v : loanTotal(l);
+  var title = 'Cobrar ' + fullName(l) + (pc ? ' — parcela ' + (k + 1) + '/' + l.parc.n : '') + ' — ' + plain(brl(amount));
+  var desc = pc
+    ? ['Parcela ' + (k + 1) + ' de ' + l.parc.n + ': ' + plain(brl(amount)),
+       'Total do empréstimo: ' + plain(brl(loanTotal(l))),
+       'Emprestado: ' + plain(brl(l.valor)) + ' em ' + fmtFull(l.date),
+       'Vencimento: ' + fmtFull(dueOf(l, k))]
+    : ['Valor a receber: ' + plain(brl(loanTotal(l))),
+       'Emprestado: ' + plain(brl(l.valor)) + ' em ' + fmtFull(l.date),
+       'Vencimento: ' + fmtFull(dueDate(l.date))];
   if (l.phone) desc.push('Telefone: ' + l.phone);
-  var lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Emprestimos//PT-BR//', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+  return [
     'BEGIN:VEVENT',
-    'UID:' + l.id + '-lembrete@emprestimos.local',
+    'UID:' + l.id + (pc ? '-p' + (k + 1) : '-lembrete') + '@emprestimos.local',
     'DTSTAMP:' + stamp,
     'DTSTART:' + day + 'T' + pad(h) + '0000',
     'DTEND:' + day + 'T' + pad(h) + '3000',
@@ -888,8 +1007,15 @@ function makeICS(l) {
     'DESCRIPTION:' + icsEscape(desc.join('\n')),
     'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(title), 'TRIGGER:PT0S', 'END:VALARM',
     'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(title), 'TRIGGER:-PT1H', 'END:VALARM',
-    'END:VEVENT', 'END:VCALENDAR'
+    'END:VEVENT'
   ];
+}
+function makeICS(l) {
+  var h = db.settings.reminderHour;
+  var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Emprestimos//PT-BR//', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+  icsKs(l).forEach(function (k) { lines = lines.concat(icsEvent(l, k, stamp, h)); });
+  lines.push('END:VCALENDAR');
   return lines.map(foldLine).join('\r\n') + '\r\n';
 }
 function slug(s) {
@@ -906,7 +1032,7 @@ function icsToB64(text) {
 function calLink(l, kind) {
   var href = 'lembrete.ics?c=' + icsToB64(makeICS(l));
   if (kind === 'alt') return '<a class="btn link" data-act="cal-add" data-id="' + l.id + '" download="lembrete-' + slug(fullName(l)) + '.ics" href="' + esc(href) + '">Não abriu? Tente outra forma</a>';
-  return '<a class="btn' + (kind === 'primary' ? ' primary' : '') + '" data-act="cal-add" data-id="' + l.id + '" href="' + esc(href) + '">' + (l.calAt ? 'Adicionar de novo ao Calendário' : 'Adicionar lembrete ao Calendário') + '</a>';
+  return '<a class="btn' + (kind === 'primary' ? ' primary' : '') + '" data-act="cal-add" data-id="' + l.id + '" href="' + esc(href) + '">' + (l.calAt ? 'Adicionar de novo ao Calendário' : (isParc(l) ? 'Adicionar lembretes das parcelas ao Calendário' : 'Adicionar lembrete ao Calendário')) + '</a>';
 }
 // Antes de seguir o link, confirma que o service worker está ativo: se não estiver, o endereço (com nome e telefone) iria para a internet.
 function calGuard(e, id) {
@@ -929,6 +1055,11 @@ var CAL_EVENTS = [['visibilitychange', document], ['pageshow', window], ['focus'
 var CAL_TOUCH = ['pointerdown', 'touchstart', 'keydown'];
 
 function calDoneHtml(l, mode) {
+  if (isParc(l)) {
+    var ks = icsKs(l);
+    return '<div class="done ' + mode + '"><svg class="ck" viewBox="0 0 52 52" aria-hidden="true"><circle class="ck-ring" cx="26" cy="26" r="24"/><circle class="ck-c" cx="26" cy="26" r="24"/><path class="ck-p" d="M15 27l8 8 14-16"/></svg>' +
+      '<h2>' + (ks.length === 1 ? 'Lembrete adicionado' : 'Lembretes adicionados') + '</h2><p class="muted">' + (ks.length === 1 ? 'O aviso toca em ' : ks.length + ' avisos, o primeiro em ') + '<b>' + esc(fmtLong(remOf(l, ks[0]))) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p></div>';
+  }
   return '<div class="done ' + mode + '"><svg class="ck" viewBox="0 0 52 52" aria-hidden="true"><circle class="ck-ring" cx="26" cy="26" r="24"/><circle class="ck-c" cx="26" cy="26" r="24"/><path class="ck-p" d="M15 27l8 8 14-16"/></svg>' +
     '<h2>Lembrete adicionado</h2><p class="muted">O aviso toca em <b>' + esc(fmtLong(reminderDate(l.date))) + '</b>, às ' + pad(db.settings.reminderHour) + ':00.</p></div>';
 }
@@ -1331,7 +1462,17 @@ document.addEventListener('click', function (e) {
     case 'late-off': lateOnly = false; render(); break;
     case 'q-clear': query = ''; $('#q').value = ''; renderList(); $('#q').focus(); break;
     case 'pay': payLoan(id); break;
-    case 'reopen': var l = find(id); if (l) { l.status = 'active'; l.paidAt = null; save(); closeSheet(); render(); toast('Empréstimo reaberto'); } break;
+    case 'reopen': var l = find(id); if (l) { if (isParc(l) && parcPaid(l)) l.parc.pagas.pop(); l.status = 'active'; l.paidAt = null; save(); closeSheet(); render(); toast('Empréstimo reaberto'); } break;
+    case 'unpay': unpayLoan(id); break;
+    case 'mode':
+      var mf = $('#loan-form');
+      if (mf) {
+        mf.dataset.mode = el.dataset.m;
+        Array.prototype.forEach.call(document.querySelectorAll('#mode-seg button'), function (b) { b.setAttribute('aria-pressed', String(b === el)); });
+        $('#parc-fields').hidden = el.dataset.m !== 'parc';
+        updatePreview(); var me = $('#form-err'); if (me) me.textContent = '';
+      }
+      break;
     case 'delete':
       askConfirm({ title: 'Excluir este empréstimo?', text: 'Isso não pode ser desfeito.', ok: 'Excluir', danger: true }).then(function (yes) {
         if (!yes) return;
@@ -1364,7 +1505,8 @@ document.addEventListener('input', function (e) {
   if (m === 'money') {
     var d = t.value.replace(/\D/g, '').slice(0, 12), c = d ? parseInt(d, 10) : 0;
     t.dataset.cents = c; t.value = d ? num(c) : '';
-  } else if (m === 'cpf') t.value = maskCPF(t.value);
+  } else if (m === 'int') t.value = t.value.replace(/\D/g, '').slice(0, 3);
+  else if (m === 'cpf') t.value = maskCPF(t.value);
   else if (m === 'phone') t.value = maskPhone(t.value, e.inputType === 'insertFromPaste');
   if (t.classList) t.classList.remove('ai-filled');
   if (t.closest && t.closest('#loan-form')) {
@@ -1372,6 +1514,16 @@ document.addEventListener('input', function (e) {
     if (t.name === 'nome' || t.name === 'sobrenome') renderSuggest();
     if (t.name === 'indicacao') renderSuggestInd();
   }
+});
+
+// Colar um valor em reais ("400", "1.200,00", "R$ 400,50"): entra como reais inteiros, não como centavos
+document.addEventListener('paste', function (e) {
+  var t = e.target;
+  if (!t || !t.dataset || t.dataset.paste !== 'reais' || t.readOnly) return;
+  var c = parseReais(((e.clipboardData || window.clipboardData) && (e.clipboardData || window.clipboardData).getData('text')) || '');
+  if (c == null || c > 999999999999) return;      // formato estranho: segue o comportamento normal
+  e.preventDefault(); setMoney(t, c);
+  t.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
 document.addEventListener('keydown', function (e) {
